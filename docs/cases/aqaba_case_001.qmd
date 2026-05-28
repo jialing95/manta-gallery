@@ -4,29 +4,38 @@ title: "Aqaba Case 001"
 
 ## Overview
 
-This case demonstrates the intended MANTA Gallery layout.
+This case presents a single-frame gallery-ready export from a D-Claw landslide-tsunami simulation in the Gulf of Aqaba.
 
-The water surface is colored by wave amplitude. The landslide layer can be colored by `hm`, `m`, or `Δb`.
+The terrain is displayed using a sea-split topo-bathymetric style. The water surface is colored by wave amplitude. The landslide material layer carries `hm`, `m`, and `Δb` fields for interactive switching in the browser viewer.
 
 ::: {.viewer-placeholder}
-**Interactive 3D viewer placeholder**
 
+**Interactive 3D viewer coming next**
 
-Terrain + wave-amplitude water surface + landslide material layer
+Current exported demo package:
+
+- `terrain.vtp`
+- `water/frame_0000.vtp`
+- `landslide/frame_0000.vtp`
+- `case.json`
+
 :::
 
-## Planned controls
+## Current export settings
 
-- Play / Pause
-- Time slider
-- Terrain visibility
-- Water surface visibility
-- Landslide material visibility
-- Water `m` cutoff
-- Landslide `m` cutoff
-- Landslide color-by selector: `hm / m / Δb`
+| Item | Value |
+|---|---:|
+| Source | FORT-native |
+| Frame index | `20` |
+| Terrain / water stride | `20` |
+| Landslide stride | `5` |
+| Landslide ROI | global union over all `72` frames |
+| Landslide ROI pad | `24` cells |
+| Water threshold | `m <= 0.3` |
+| Landslide threshold | `m >= 0.0` |
+| Package size | ~`1.8 MB` |
 
-## Planned visual theme
+## Layer styles
 
 | Layer | Style |
 |---|---|
