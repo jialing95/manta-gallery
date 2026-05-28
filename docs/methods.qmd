@@ -1,0 +1,35 @@
+---
+title: "Methods"
+---
+
+## Visualization design
+
+MANTA Gallery is not an online simulation platform. It displays curated, pre-exported simulation scenes.
+
+## Layer conventions
+
+### DEM
+
+The DEM uses sea-split visualization:
+
+- Below sea level: `cmocean.deep`
+- Above sea level: `cmcrameri.grayC + relief`
+
+### Water surface
+
+The water surface is colored by wave amplitude using:
+
+- `dclaw.tsunami`
+- Label: `Wave amplitude (m)`
+
+The water layer is filtered by a water-like solid-fraction cutoff.
+
+### Landslide material
+
+The landslide material layer is colored by one of:
+
+- `hm`: solid-phase thickness
+- `m`: solid volume fraction
+- `Δb`: bed change
+
+The landslide layer uses the `magma` colormap and is filtered by a landslide solid-fraction cutoff.

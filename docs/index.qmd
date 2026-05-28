@@ -1,0 +1,18 @@
+---
+title: "MANTA Gallery"
+---
+
+MANTA Gallery is a lightweight browser-based gallery for visualizing tsunami wave amplitude and landslide material fields exported from MANTA/PyVista.
+
+The gallery focuses on curated scientific visualization rather than online computation.
+
+## Core visualization concept
+
+- DEM base layer: sea-split topobathymetry
+- Water surface: wave amplitude using the Tsunami colormap
+- Landslide material: hm, m, or Δb using magma
+- Separate solid-fraction thresholds for water-like and landslide-dominated regions
+
+## Gallery status
+
+This repository is currently under active development.

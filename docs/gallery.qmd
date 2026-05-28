@@ -1,0 +1,13 @@
+---
+title: "Gallery"
+---
+
+## Demo cases
+
+::: {.case-card}
+### Aqaba Case 001
+
+Interactive 3D view of wave-amplitude evolution and landslide material fields.
+
+[Open case](cases/aqaba_case_001.qmd)
+:::
