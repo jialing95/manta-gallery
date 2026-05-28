@@ -39,3 +39,6 @@ fgmax/
 !data/demo/**/*.png
 !data/demo/**/*.csv
 !data/demo/**/*.geojson
+
+/.quarto/
+**/*.quarto_ipynb

@@ -1,0 +1,36 @@
+---
+title: "Aqaba Case 001"
+---
+
+## Overview
+
+This case demonstrates the intended MANTA Gallery layout.
+
+The water surface is colored by wave amplitude. The landslide layer can be colored by `hm`, `m`, or `Δb`.
+
+::: {.viewer-placeholder}
+**Interactive 3D viewer placeholder**
+
+
+Terrain + wave-amplitude water surface + landslide material layer
+:::
+
+## Planned controls
+
+- Play / Pause
+- Time slider
+- Terrain visibility
+- Water surface visibility
+- Landslide material visibility
+- Water `m` cutoff
+- Landslide `m` cutoff
+- Landslide color-by selector: `hm / m / Δb`
+
+## Planned visual theme
+
+| Layer | Style |
+|---|---|
+| DEM bathymetry | `cmocean.deep` |
+| DEM topography | `cmcrameri.grayC + relief` |
+| Water surface | `dclaw.tsunami` |
+| Landslide | `magma` |

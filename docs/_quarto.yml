@@ -1,0 +1,24 @@
+project:
+  type: website
+  output-dir: ../_site
+
+website:
+  title: "MANTA Gallery"
+  navbar:
+    left:
+      - text: "Home"
+        href: index.qmd
+      - text: "Gallery"
+        href: gallery.qmd
+      - text: "Methods"
+        href: methods.qmd
+  page-footer:
+    left: "MANTA Gallery"
+    right: "Built with Quarto"
+
+format:
+  html:
+    theme: cosmo
+    toc: true
+    page-layout: full
+    css: assets/styles.css
