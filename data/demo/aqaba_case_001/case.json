@@ -1,11 +1,19 @@
 {
   "id": "aqaba_case_001",
   "title": "Aqaba landslide-tsunami simulation",
-  "description": "Interactive 3D view of wave-amplitude evolution and landslide material fields.",
+  "description": "Single-frame gallery-ready export of wave amplitude and landslide material fields.",
+  "source": {
+    "kind": "fort",
+    "case_dir": "/home/daij/Desktop/compile_all/AQA_016_K1_C10_angm35_mixed",
+    "frame_index": 20,
+    "raw_output": "not included"
+  },
   "time": {
     "mode": "single_frame",
     "unit": "s",
-    "values": [0],
+    "values": [
+      140.0
+    ],
     "default_index": 0
   },
   "layers": {
@@ -31,15 +39,21 @@
       "display_scalar": "wave_amplitude",
       "filter_scalar": "m",
       "filter_rule": "m <= water_m",
-      "default_m": 0.001,
-      "m_range": [0.0, 1.0],
+      "default_m": 0.3,
+      "m_range": [
+        0.0,
+        1.0
+      ],
       "label": "Wave amplitude",
       "unit": "m",
       "colormap": "dclaw.tsunami",
       "colormap_label": "Tsunami",
       "colorbar": {
         "side": "right",
-        "range": [-2.0, 2.0]
+        "range": [
+          -12.942337036132812,
+          601.0611572265625
+        ]
       }
     },
     "landslide": {
@@ -47,8 +61,11 @@
       "visible": true,
       "filter_scalar": "m",
       "filter_rule": "m >= landslide_m",
-      "default_m": 0.30,
-      "m_range": [0.0, 1.0],
+      "default_m": 0.0,
+      "m_range": [
+        0.0,
+        1.0
+      ],
       "default_scalar": "hm",
       "colormap": "magma",
       "colorbar": {
@@ -57,23 +74,34 @@
       "available_scalars": {
         "hm": {
           "label": "hm (solid thickness)",
-          "unit": "m"
+          "unit": "m",
+          "range": [
+            1.7883353393699508e-06,
+            386.20452880859375
+          ]
         },
         "m": {
           "label": "m (solid fraction)",
           "unit": "1",
-          "range": [0.0, 1.0]
+          "range": [
+            0.0,
+            1.0
+          ]
         },
         "db": {
           "label": "Δb (bed change)",
-          "unit": "m"
+          "unit": "m",
+          "range": [
+            -111.86954593658447,
+            124.81709790229797
+          ]
         }
       }
     }
   },
   "ui": {
     "show_layer_toggles": true,
-    "show_time_slider": true,
+    "show_time_slider": false,
     "show_water_m_slider": true,
     "show_landslide_m_slider": true,
     "show_landslide_scalar_selector": true,
@@ -85,8 +113,182 @@
     "preset": "oblique"
   },
   "processing": {
+    "sea_level": 0.0,
+    "stride": {
+      "terrain": 20,
+      "water": 20,
+      "landslide": 5
+    },
+    "landslide_roi": {
+      "enabled": true,
+      "type": "global_union_over_frames",
+      "hm_eps": 1e-06,
+      "pad_cells": 24,
+      "roi_rc_exclusive": [
+        541,
+        664,
+        328,
+        403
+      ],
+      "scan": {
+        "mode": "all",
+        "frame_step": 1,
+        "frame_indices": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38,
+          39,
+          40,
+          41,
+          42,
+          43,
+          44,
+          45,
+          46,
+          47,
+          48,
+          49,
+          50,
+          51,
+          52,
+          53,
+          54,
+          55,
+          56,
+          57,
+          58,
+          59,
+          60,
+          61,
+          62,
+          63,
+          64,
+          65,
+          66,
+          67,
+          68,
+          69,
+          70,
+          71
+        ],
+        "valid_counts": {
+          "0": 156,
+          "1": 190,
+          "2": 229,
+          "3": 264,
+          "4": 301,
+          "5": 330,
+          "6": 350,
+          "7": 358,
+          "8": 379,
+          "9": 396,
+          "10": 410,
+          "11": 422,
+          "12": 441,
+          "13": 490,
+          "14": 499,
+          "15": 513,
+          "16": 523,
+          "17": 530,
+          "18": 537,
+          "19": 544,
+          "20": 551,
+          "21": 546,
+          "22": 546,
+          "23": 553,
+          "24": 545,
+          "25": 544,
+          "26": 547,
+          "27": 554,
+          "28": 558,
+          "29": 556,
+          "30": 558,
+          "31": 563,
+          "32": 565,
+          "33": 569,
+          "34": 567,
+          "35": 566,
+          "36": 566,
+          "37": 563,
+          "38": 573,
+          "39": 557,
+          "40": 546,
+          "41": 553,
+          "42": 537,
+          "43": 533,
+          "44": 522,
+          "45": 536,
+          "46": 524,
+          "47": 520,
+          "48": 535,
+          "49": 525,
+          "50": 517,
+          "51": 511,
+          "52": 510,
+          "53": 510,
+          "54": 514,
+          "55": 510,
+          "56": 510,
+          "57": 507,
+          "58": 504,
+          "59": 511,
+          "60": 512,
+          "61": 517,
+          "62": 520,
+          "63": 540,
+          "64": 542,
+          "65": 542,
+          "66": 538,
+          "67": 537,
+          "68": 537,
+          "69": 530,
+          "70": 517,
+          "71": 519
+        },
+        "valid_frame_count": 72,
+        "roi_shape": [
+          1323,
+          537
+        ]
+      }
+    },
     "water_surface": "Colored by wave amplitude and filtered by water-like solid-fraction cutoff.",
-    "landslide_surface": "Colored by hm, m, or Δb and filtered by landslide solid-fraction cutoff.",
-    "raw_output": "not included"
+    "landslide_surface": "Cropped to global landslide ROI, colored by hm, m, or Δb, and filtered by landslide solid-fraction cutoff."
   }
 }
