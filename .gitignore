@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.env
+
+# Node / viewer build
+node_modules/
+viewer/dist/
+
+# Quarto
+.quarto/
+_site/
+
+# Raw simulation outputs: never commit
+_output/
+_plots/
+fort.q*
+fort.t*
+fgout/
+fgmax/
+*.nc
+*.h5
+*.hdf5
+*.tif
+*.tiff
+
+# Large accidental exports
+*.vtk
+*.vtu
+*.pvd
+*.xdmf
+*.npz
+*.npy
+
+# Allow curated gallery data only
+!data/demo/**/*.vtp
+!data/demo/**/*.json
+!data/demo/**/*.png
+!data/demo/**/*.csv
+!data/demo/**/*.geojson
