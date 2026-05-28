@@ -3,8 +3,9 @@
   "title": "Aqaba landslide-tsunami simulation",
   "description": "Interactive 3D view of wave-amplitude evolution and landslide material fields.",
   "time": {
+    "mode": "single_frame",
     "unit": "s",
-    "values": [0, 60, 120, 180, 240],
+    "values": [0],
     "default_index": 0
   },
   "layers": {
@@ -61,7 +62,7 @@
         "m": {
           "label": "m (solid fraction)",
           "unit": "1",
-          "range": [0.30, 1.0]
+          "range": [0.0, 1.0]
         },
         "db": {
           "label": "Δb (bed change)",
@@ -82,5 +83,10 @@
   },
   "camera": {
     "preset": "oblique"
+  },
+  "processing": {
+    "water_surface": "Colored by wave amplitude and filtered by water-like solid-fraction cutoff.",
+    "landslide_surface": "Colored by hm, m, or Δb and filtered by landslide solid-fraction cutoff.",
+    "raw_output": "not included"
   }
 }
