@@ -1,16 +1,35 @@
 # MANTA Gallery Exporters
 
-This directory will contain scripts for exporting MANTA/PyVista visualization results into gallery-ready web assets.
+This directory contains scripts for exporting MANTA/PyVista visualization results into gallery-ready web assets.
 
 The first target is a single-frame case export:
 
-- `terrain.vtp`
-- `water/frame_0000.vtp`
-  - scalar: `wave_amplitude`
-  - filter field: `m`
-- `landslide/frame_0000.vtp`
-  - scalars: `hm`, `m`, `db`
-- `case.json`
-- `thumbnail.png`
+```text
+terrain.vtp
+water/frame_0000.vtp
+landslide/frame_0000.vtp
+case.json
+```
 
-The web viewer should not parse raw D-Claw or GeoClaw outputs directly. Raw simulation outputs are processed by MANTA/exporter first, then exported as lightweight gallery-ready files.
+## Data contract
+
+### Water surface
+
+`water/frame_0000.vtp` contains:
+
+- geometry: free surface elevation
+- scalar: `wave_amplitude`
+- filter field: `m`
+
+The browser viewer should display `wave_amplitude` and filter by:
+
+```text
+m <= water_m
+```
+
+### Landslide surface
+
+`landslide/frame_0000.vtp` contains:
+
+- `hm`: solid-phase thickness
+- `m`: solid volume fraction
