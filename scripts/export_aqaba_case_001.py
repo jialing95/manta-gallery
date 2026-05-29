@@ -73,11 +73,13 @@ LANDSLIDE_STRIDE = 5
 #   robust amplitude outlier guard. This prevents isolated eta spikes from
 #   becoming water-surface geometry.
 WATER_DRY_TOL = 5.0e-4
-WATER_REQUIRE_OCEAN_BASE = True
+WATER_REQUIRE_OCEAN_BASE = False
 WATER_OCEAN_B0_EPS = 0.0
 WATER_AMP_ROBUST_PERCENTILE = 99.0
 WATER_AMP_OUTLIER_FACTOR = 6.0
 WATER_AMP_MIN_LIMIT = 10.0
+WATER_AMP_ROBUST_GUARD_ENABLED = False
+WATER_AMP_ABS_HARD_LIMIT = 100.0
 
 # Global landslide ROI settings.
 # "all": scan all frames with ROI_FRAME_STEP.
@@ -211,9 +213,15 @@ def build_water_surface(F_full: Dict[str, np.ndarray]):
     else:
         water_mask = wet
 
-    # Robust outlier guard, independent of m.
-    amp_limit = robust_abs_limit(wave_amplitude[water_mask])
-    if amp_limit is not None:
+    # Preserve near-source water elevations.  The robust guard is disabled by
+    # default because true impact waves can be large and sparse during the first
+    # frames.  We keep only a generous hard sanity cap to remove impossible
+    # artifacts such as hundreds-of-meters eta spikes.
+    amp_limit = robust_abs_limit(wave_amplitude[water_mask]) if WATER_AMP_ROBUST_GUARD_ENABLED else None
+    hard_limit = float(WATER_AMP_ABS_HARD_LIMIT)
+    if np.isfinite(hard_limit) and hard_limit > 0.0:
+        water_mask = water_mask & np.isfinite(wave_amplitude) & (np.abs(wave_amplitude) <= hard_limit)
+    if WATER_AMP_ROBUST_GUARD_ENABLED and amp_limit is not None:
         water_mask = water_mask & np.isfinite(wave_amplitude) & (np.abs(wave_amplitude) <= amp_limit)
 
     Z_water = np.where(water_mask, eta, np.nan)
@@ -778,7 +786,7 @@ def export_case() -> None:
                 "colorbar": {
                     "side": "right",
                     "range": water_amp_range.as_list(),
-                    "range_mode": "robust_symmetric_per_frame_in_viewer",
+                    "range_mode": "fixed_symmetric_global_one_third_in_viewer",
                 },
             },
             "landslide": {
@@ -837,8 +845,7 @@ def export_case() -> None:
                 },
                 "m_threshold_applied_at_export": False,
                 "amplitude_outlier_guard": {
-                    "enabled": True,
-                    "percentile": float(WATER_AMP_ROBUST_PERCENTILE),
+                    "enabled": bool(WATER_AMP_ROBUST_GUARD_ENABLED), "hard_abs_limit": float(WATER_AMP_ABS_HARD_LIMIT), "percentile": float(WATER_AMP_ROBUST_PERCENTILE),
                     "factor": float(WATER_AMP_OUTLIER_FACTOR),
                     "min_limit": float(WATER_AMP_MIN_LIMIT),
                     "per_browser_frame_limit": water_amp_limits,

@@ -450,7 +450,12 @@ function symmetricRangeFromRange(range) {
 
 function getWaterDisplayRange() {
   const manifestRange = state.caseInfo?.layers?.water?.colorbar?.range;
-  return symmetricRangeFromRange(manifestRange);
+  const fullRange = symmetricRangeFromRange(manifestRange);
+  if (!fullRange) return null;
+
+  const fullLimit = Math.max(Math.abs(fullRange[0]), Math.abs(fullRange[1]), 1e-12);
+  const displayLimit = Math.max(fullLimit * WATER_DISPLAY_RANGE_FRACTION, 1e-12);
+  return [-displayLimit, displayLimit];
 }
 
 async function readVtp(url) {
@@ -521,16 +526,17 @@ const MAGMA_COLOR_STOPS = [
 ];
 
 const WATER_COLOR_STOPS = TSUNAMI_COLOR_STOPS;
+const WATER_DISPLAY_RANGE_FRACTION = 1.0 / 3.0;
 const LANDSLIDE_COLOR_STOPS = {
   hm: MAGMA_COLOR_STOPS,
   m: MAGMA_COLOR_STOPS,
   db: MAGMA_COLOR_STOPS,
 };
 
-const LANDSLIDE_SCALAR_LABELS = {
-  hm: 'hm',
-  m: 'm',
-  db: 'Δb',
+const LANDSLIDE_COLORBAR_TITLES = {
+  hm: 'Landslide thickness (m)',
+  m: 'Landslide solid volume fraction m',
+  db: 'Bed elevation change δb (m)',
 };
 
 function getArrayByName(attributes, name) {
@@ -729,7 +735,7 @@ function updateColorbar({ idPrefix, title, scalarInfo, colorStops, showZeroTick 
 function updateWaterColorbar() {
   updateColorbar({
     idPrefix: 'water',
-    title: 'Tsunami / wave amplitude',
+    title: 'Wave height (m)',
     scalarInfo: state.scalarInfo.water,
     colorStops: WATER_COLOR_STOPS,
     showZeroTick: true,
@@ -738,10 +744,10 @@ function updateWaterColorbar() {
 
 function updateLandslideColorbar(scalarName = 'hm') {
   const colorStops = LANDSLIDE_COLOR_STOPS[scalarName] ?? MAGMA_COLOR_STOPS;
-  const label = LANDSLIDE_SCALAR_LABELS[scalarName] ?? scalarName;
+  const title = LANDSLIDE_COLORBAR_TITLES[scalarName] ?? `Landslide / ${scalarName}`;
   updateColorbar({
     idPrefix: 'landslide',
-    title: `Landslide / ${label}`,
+    title,
     scalarInfo: state.scalarInfo.landslide,
     colorStops,
     showZeroTick: scalarName === 'db',
