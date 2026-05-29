@@ -19,6 +19,8 @@ const state = {
   caseInfo: null,
   renderer: null,
   renderWindow: null,
+  openGLRenderWindow: null,
+  interactor: null,
   actors: {
     terrain: null,
     water: null,
@@ -33,6 +35,17 @@ const state = {
     water: null,
     landslide: null,
   },
+  currentFrameIndex: 0,
+  frameCount: 1,
+  frameCache: new Map(),
+  maxCachedFrames: 7,
+  isFrameLoading: false,
+  queuedFrameIndex: null,
+  isScrubbing: false,
+  isPlaying: false,
+  playTimer: null,
+  playIntervalMs: 520,
+  activeLandslideScalar: 'hm',
 };
 
 function injectCss() {
@@ -44,7 +57,8 @@ function injectCss() {
     .manta-viewer {
       position: relative;
       width: 100%;
-      height: clamp(780px, 86vh, 1120px); min-height: 720px;
+      height: clamp(780px, 86vh, 1120px);
+      min-height: 720px;
       overflow: hidden;
       border: 1px solid #d0d7de;
       border-radius: 8px;
@@ -70,7 +84,7 @@ function injectCss() {
       left: 12px;
       top: 12px;
       z-index: 20;
-      max-width: min(760px, calc(100% - 24px));
+      max-width: min(820px, calc(100% - 24px));
       padding: 7px 10px;
       border-radius: 6px;
       font-size: 13px;
@@ -90,6 +104,7 @@ function injectCss() {
     .manta-viewer-controls {
       position: absolute;
       left: 12px;
+      right: 12px;
       bottom: 12px;
       z-index: 30;
       display: flex;
@@ -102,6 +117,12 @@ function injectCss() {
       color: #24292f;
       background: rgba(255, 255, 255, 0.92);
       box-shadow: 0 1px 5px rgba(0, 0, 0, 0.2);
+      pointer-events: auto;
+    }
+
+    .manta-viewer-controls,
+    .manta-viewer-controls * {
+      pointer-events: auto;
     }
 
     .manta-viewer-controls label {
@@ -122,6 +143,31 @@ function injectCss() {
       border-radius: 5px;
       background: #ffffff;
       color: #24292f;
+    }
+
+    .manta-time-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 1 1 420px;
+      min-width: min(420px, 100%);
+    }
+
+    .manta-time-controls input[type="range"] {
+      flex: 1 1 auto;
+      min-width: 180px;
+      cursor: pointer;
+      touch-action: pan-x;
+      position: relative;
+      z-index: 40;
+    }
+
+    .manta-time-readout {
+      min-width: 170px;
+      text-align: right;
+      color: #57606a;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
     }
 
     .manta-viewer-legend {
@@ -314,6 +360,12 @@ function setupDom(container) {
         </select>
       </label>
 
+      <div class="manta-time-controls">
+        <button id="play-toggle" type="button" disabled>Play</button>
+        <input id="time-slider" type="range" min="0" max="0" value="0" step="1" disabled>
+        <span id="time-readout" class="manta-time-readout">frame 1/1</span>
+      </div>
+
       <button id="reset-camera" type="button">Reset view</button>
     </div>
   `;
@@ -346,23 +398,59 @@ function caseUrl(path) {
   return new URL(path, CASE_BASE_URL);
 }
 
-function getDefaultFrameIndex(caseInfo) {
+function getFrameCount(caseInfo) {
+  const declared = Number(caseInfo?.time?.frame_count);
+  if (Number.isFinite(declared) && declared > 0) return Math.floor(declared);
+
   const values = caseInfo?.time?.values;
-  const n = Array.isArray(values) && values.length > 0 ? values.length : 1;
+  if (Array.isArray(values) && values.length > 0) return values.length;
 
-  let index = Number(caseInfo?.time?.default_index);
-  if (!Number.isFinite(index)) index = 0;
+  return 1;
+}
 
-  index = Math.round(index);
-  return Math.min(Math.max(index, 0), n - 1);
+function clampFrameIndex(caseInfo, frameIndex) {
+  const n = getFrameCount(caseInfo);
+  const k = Number(frameIndex);
+  if (!Number.isFinite(k)) return 0;
+  return Math.min(Math.max(Math.round(k), 0), n - 1);
+}
+
+function getDefaultFrameIndex(caseInfo) {
+  return clampFrameIndex(caseInfo, Number(caseInfo?.time?.default_index ?? 0));
 }
 
 function getFrameTime(caseInfo, frameIndex) {
   const values = caseInfo?.time?.values;
   if (!Array.isArray(values)) return null;
-
   const t = Number(values[frameIndex]);
   return Number.isFinite(t) ? t : null;
+}
+
+function getFrameLabel(caseInfo, frameIndex) {
+  const n = getFrameCount(caseInfo);
+  const t = getFrameTime(caseInfo, frameIndex);
+  const timeText = Number.isFinite(t) ? `t = ${t.toFixed(2)} s` : 'time unavailable';
+  return `frame ${frameIndex + 1}/${n}, ${timeText}`;
+}
+
+function finitePairRange(range) {
+  if (!Array.isArray(range) || range.length < 2) return null;
+  const lo = Number(range[0]);
+  const hi = Number(range[1]);
+  if (!Number.isFinite(lo) || !Number.isFinite(hi) || hi <= lo) return null;
+  return [lo, hi];
+}
+
+function symmetricRangeFromRange(range) {
+  const clean = finitePairRange(range);
+  if (!clean) return null;
+  const limit = Math.max(Math.abs(clean[0]), Math.abs(clean[1]), 1e-12);
+  return [-limit, limit];
+}
+
+function getWaterDisplayRange() {
+  const manifestRange = state.caseInfo?.layers?.water?.colorbar?.range;
+  return symmetricRangeFromRange(manifestRange);
 }
 
 async function readVtp(url) {
@@ -413,7 +501,6 @@ function setupScene(host) {
   setTimeout(resize, 0);
 }
 
-
 const TSUNAMI_COLOR_STOPS = [
   [0.00, 0.03, 0.05, 0.22],
   [0.18, 0.06, 0.22, 0.55],
@@ -434,7 +521,6 @@ const MAGMA_COLOR_STOPS = [
 ];
 
 const WATER_COLOR_STOPS = TSUNAMI_COLOR_STOPS;
-
 const LANDSLIDE_COLOR_STOPS = {
   hm: MAGMA_COLOR_STOPS,
   m: MAGMA_COLOR_STOPS,
@@ -533,7 +619,6 @@ function computeRobustSymmetricRange(dataArray, percentile = 99.0) {
     Math.max(0, Math.floor((clampedPercentile / 100.0) * (magnitudes.length - 1)))
   );
   const limit = Math.max(magnitudes[index], 1e-12);
-
   return [-limit, limit];
 }
 
@@ -546,13 +631,24 @@ function zeroCenteredRangeIfNeeded(arrayName, range) {
   return [-limit, limit];
 }
 
-function resolveDisplayRange({ arrayName, dataArray, rawRange, rangeMode = 'auto', robustPercentile = 99.0 }) {
-  if (!rawRange) return null;
-
-  if (rangeMode === 'robust-symmetric') {
-    return computeRobustSymmetricRange(dataArray, robustPercentile) ?? zeroCenteredRangeIfNeeded(arrayName, rawRange);
+function resolveDisplayRange({
+  arrayName,
+  dataArray,
+  rawRange,
+  rangeMode = 'auto',
+  robustPercentile = 99.0,
+  fixedRange = null,
+}) {
+  const cleanFixedRange = finitePairRange(fixedRange);
+  if (cleanFixedRange) {
+    return zeroCenteredRangeIfNeeded(arrayName, cleanFixedRange);
   }
 
+  if (!rawRange) return null;
+  if (rangeMode === 'robust-symmetric') {
+    return computeRobustSymmetricRange(dataArray, robustPercentile)
+      ?? zeroCenteredRangeIfNeeded(arrayName, rawRange);
+  }
   return zeroCenteredRangeIfNeeded(arrayName, rawRange);
 }
 
@@ -614,6 +710,7 @@ function updateColorbar({ idPrefix, title, scalarInfo, colorStops, showZeroTick 
   const midValue = showZeroTick && vmin < 0 && vmax > 0 ? 0.0 : 0.5 * (vmin + vmax);
 
   container.classList.remove('manta-colorbar-hidden');
+
   const titleEl = document.getElementById(`${idPrefix}-colorbar-title`);
   const rangeEl = document.getElementById(`${idPrefix}-colorbar-range`);
   const stripEl = document.getElementById(`${idPrefix}-colorbar-strip`);
@@ -659,10 +756,13 @@ function applyScalarToActor({
   fallbackColor,
   rangeMode = 'auto',
   robustPercentile = 99.0,
+  fixedRange = null,
 }) {
   if (!actor || !polyData) return null;
 
   const mapper = actor.getMapper();
+  mapper.setInputData(polyData);
+
   const found = findDataArray(polyData, arrayNames);
 
   if (!found) {
@@ -679,6 +779,7 @@ function applyScalarToActor({
     rawRange,
     rangeMode,
     robustPercentile,
+    fixedRange,
   });
 
   if (!range) {
@@ -753,6 +854,7 @@ function createScalarActor(
 }
 
 function applyLandslideScalar(scalarName) {
+  state.activeLandslideScalar = scalarName;
   const colorStops = LANDSLIDE_COLOR_STOPS[scalarName] ?? LANDSLIDE_COLOR_STOPS.hm;
   const scalarInfo = applyScalarToActor({
     actor: state.actors.landslide,
@@ -772,41 +874,87 @@ function applyLandslideScalar(scalarName) {
   state.renderWindow?.render();
 }
 
+async function readFrameData(frameIndex) {
+  const caseInfo = state.caseInfo;
+  const k = clampFrameIndex(caseInfo, frameIndex);
+
+  if (state.frameCache.has(k)) {
+    return state.frameCache.get(k);
+  }
+
+  const waterPath = framePathFromPattern(caseInfo.layers.water.file_pattern, k);
+  const landslidePath = framePathFromPattern(caseInfo.layers.landslide.file_pattern, k);
+
+  const [water, landslide] = await Promise.all([
+    readVtp(caseUrl(waterPath)),
+    readVtp(caseUrl(landslidePath)),
+  ]);
+
+  const entry = { water, landslide };
+  state.frameCache.set(k, entry);
+  trimFrameCache(k);
+
+  return entry;
+}
+
+function trimFrameCache(centerIndex) {
+  const keys = Array.from(state.frameCache.keys()).sort((a, b) => a - b);
+  if (keys.length <= state.maxCachedFrames) return;
+
+  const scored = keys.map((key) => ({ key, distance: Math.abs(key - centerIndex) }));
+  scored.sort((a, b) => b.distance - a.distance);
+
+  while (state.frameCache.size > state.maxCachedFrames && scored.length > 0) {
+    const victim = scored.shift();
+    if (victim && victim.key !== centerIndex) {
+      state.frameCache.delete(victim.key);
+    }
+  }
+}
+
+function prefetchNearbyFrames(frameIndex) {
+  const n = state.frameCount;
+  for (const k of [frameIndex + 1, frameIndex - 1]) {
+    if (k >= 0 && k < n && !state.frameCache.has(k)) {
+      readFrameData(k).catch(() => {});
+    }
+  }
+}
+
 async function loadCaseAndData(container) {
   setStatus(container, 'Loading case.json...');
 
   const caseInfo = await fetchJson(CASE_JSON_URL);
   state.caseInfo = caseInfo;
-
-  const frameIndex = getDefaultFrameIndex(caseInfo);
+  state.frameCount = getFrameCount(caseInfo);
+  state.currentFrameIndex = getDefaultFrameIndex(caseInfo);
 
   const terrainPath = caseInfo.layers.terrain.file;
-  const defaultFrameIndex = getDefaultFrameIndex(caseInfo);
-  const waterPath = framePathFromPattern(caseInfo.layers.water.file_pattern, defaultFrameIndex);
-  const landslidePath = framePathFromPattern(caseInfo.layers.landslide.file_pattern, defaultFrameIndex);
-
   const terrainUrl = caseUrl(terrainPath);
-  const waterUrl = caseUrl(waterPath);
-  const landslideUrl = caseUrl(landslidePath);
 
   console.log('[MANTA Gallery] case.json:', CASE_JSON_URL.href);
   console.log('[MANTA Gallery] terrain:', terrainUrl.href);
-  console.log('[MANTA Gallery] water:', waterUrl.href);
-  console.log('[MANTA Gallery] landslide:', landslideUrl.href);
 
-  setStatus(container, 'Loading VTP surfaces...');
+  setStatus(container, 'Loading terrain and default time frame...');
 
-  const [terrain, water, landslide] = await Promise.all([
+  const [terrain, frameData] = await Promise.all([
     readVtp(terrainUrl),
-    readVtp(waterUrl),
-    readVtp(landslideUrl),
+    readFrameData(state.currentFrameIndex),
   ]);
 
   state.datasets.terrain = terrain;
-  state.datasets.water = water;
-  state.datasets.landslide = landslide;
+  state.datasets.water = frameData.water;
+  state.datasets.landslide = frameData.landslide;
 
-  return { caseInfo, terrain, water, landslide, frameIndex };
+  prefetchNearbyFrames(state.currentFrameIndex);
+
+  return {
+    caseInfo,
+    terrain,
+    water: frameData.water,
+    landslide: frameData.landslide,
+    frameIndex: state.currentFrameIndex,
+  };
 }
 
 function addActors(terrain, water, landslide) {
@@ -817,7 +965,11 @@ function addActors(terrain, water, landslide) {
     WATER_COLOR_STOPS,
     [0.10, 0.36, 0.85],
     0.72,
-    { rangeMode: 'robust-symmetric', robustPercentile: 99.0 }
+    {
+      fixedRange: getWaterDisplayRange(),
+      rangeMode: 'robust-symmetric',
+      robustPercentile: 99.0,
+    }
   );
   const { actor: landslideActor, scalarInfo: landslideScalarInfo } = createScalarActor(
     landslide,
@@ -867,6 +1019,133 @@ function resetCamera() {
   state.renderWindow.render();
 }
 
+function updateFrameReadout(displayFrameIndex = state.currentFrameIndex, syncSlider = true) {
+  const slider = document.getElementById('time-slider');
+  const readout = document.getElementById('time-readout');
+  const playButton = document.getElementById('play-toggle');
+
+  const frameIndex = clampFrameIndex(state.caseInfo, displayFrameIndex);
+
+  if (slider) {
+    slider.max = String(Math.max(0, state.frameCount - 1));
+    if (syncSlider) {
+      slider.value = String(frameIndex);
+    }
+    slider.disabled = state.frameCount <= 1;
+  }
+
+  if (playButton) {
+    playButton.disabled = state.frameCount <= 1;
+    playButton.textContent = state.isPlaying ? 'Pause' : 'Play';
+  }
+
+  if (readout) {
+    const loadingText = state.isFrameLoading ? 'loading…' : '';
+    readout.textContent = `${getFrameLabel(state.caseInfo, frameIndex)}${loadingText ? ` · ${loadingText}` : ''}`;
+  }
+}
+
+function updateCurrentFrameActors() {
+  const waterScalarInfo = applyScalarToActor({
+    actor: state.actors.water,
+    polyData: state.datasets.water,
+    arrayNames: ['wave_amplitude'],
+    colorStops: WATER_COLOR_STOPS,
+    fallbackColor: [0.10, 0.36, 0.85],
+    fixedRange: getWaterDisplayRange(),
+    rangeMode: 'robust-symmetric',
+    robustPercentile: 99.0,
+  });
+
+  state.scalarInfo.water = waterScalarInfo;
+  setLegendReadout(
+    'water-scalar-readout',
+    waterScalarInfo ? `${waterScalarInfo.name} ${formatRange(waterScalarInfo.range)}` : 'solid'
+  );
+  updateWaterColorbar();
+
+  applyLandslideScalar(state.activeLandslideScalar);
+
+  state.renderer?.resetCameraClippingRange();
+  state.renderWindow?.render();
+}
+
+async function requestFrame(frameIndex, container) {
+  const k = clampFrameIndex(state.caseInfo, frameIndex);
+
+  if (state.isFrameLoading) {
+    state.queuedFrameIndex = k;
+    return;
+  }
+
+  if (k === state.currentFrameIndex && state.datasets.water && state.datasets.landslide) {
+    updateFrameReadout();
+    return;
+  }
+
+  state.isFrameLoading = true;
+  state.queuedFrameIndex = null;
+  updateFrameReadout(k, true);
+
+  try {
+    setStatus(container, `Loading ${getFrameLabel(state.caseInfo, k)}...`);
+    const frameData = await readFrameData(k);
+
+    state.datasets.water = frameData.water;
+    state.datasets.landslide = frameData.landslide;
+    state.currentFrameIndex = k;
+
+    updateCurrentFrameActors();
+    updateFrameReadout();
+    prefetchNearbyFrames(k);
+
+    setStatus(
+      container,
+      `Loaded Aqaba Case 001 (${getFrameLabel(state.caseInfo, k)}). Drag to rotate, scroll to zoom.`
+    );
+  } catch (error) {
+    console.error('[MANTA Gallery] failed to load frame:', error);
+    stopPlayback();
+    setStatus(container, `Failed to load ${getFrameLabel(state.caseInfo, k)}. Check Console and Network tabs.`, true);
+  } finally {
+    state.isFrameLoading = false;
+    const queued = state.queuedFrameIndex;
+    state.queuedFrameIndex = null;
+    if (queued !== null && queued !== state.currentFrameIndex) {
+      requestFrame(queued, container);
+    }
+  }
+}
+
+function startPlayback(container) {
+  if (state.isPlaying || state.frameCount <= 1) return;
+
+  state.isPlaying = true;
+  updateFrameReadout();
+
+  state.playTimer = window.setInterval(() => {
+    const next = (state.currentFrameIndex + 1) % state.frameCount;
+    requestFrame(next, container);
+  }, state.playIntervalMs);
+}
+
+function stopPlayback() {
+  if (state.playTimer !== null) {
+    window.clearInterval(state.playTimer);
+    state.playTimer = null;
+  }
+  state.isPlaying = false;
+  updateFrameReadout();
+}
+
+function togglePlayback(container) {
+  if (state.isPlaying) {
+    stopPlayback();
+  } else {
+    startPlayback(container);
+  }
+}
+
 function setupControls(container) {
   container.querySelector('#toggle-terrain')?.addEventListener('change', (event) => {
     state.actors.terrain?.setVisibility(event.target.checked);
@@ -899,6 +1178,7 @@ function setupControls(container) {
         landslideScalarSelect.value = availableOptions[0].value;
       }
 
+      state.activeLandslideScalar = landslideScalarSelect.value;
       applyLandslideScalar(landslideScalarSelect.value);
     }
 
@@ -910,6 +1190,57 @@ function setupControls(container) {
   container.querySelector('#reset-camera')?.addEventListener('click', () => {
     resetCamera();
   });
+
+  const controls = container.querySelector('.manta-viewer-controls');
+  if (controls) {
+    for (const eventName of ['pointerdown', 'mousedown', 'touchstart', 'wheel', 'dblclick']) {
+      controls.addEventListener(eventName, (event) => {
+        event.stopPropagation();
+      }, { passive: true });
+    }
+  }
+
+  container.querySelector('#play-toggle')?.addEventListener('click', (event) => {
+    event.stopPropagation();
+    togglePlayback(container);
+  });
+
+  const slider = container.querySelector('#time-slider');
+  if (slider) {
+    slider.addEventListener('pointerdown', (event) => {
+      event.stopPropagation();
+      state.isScrubbing = true;
+      stopPlayback();
+    });
+
+    slider.addEventListener('input', (event) => {
+      event.stopPropagation();
+      const k = clampFrameIndex(state.caseInfo, Number(event.target.value));
+      updateFrameReadout(k, false);
+      setStatus(container, `Selected ${getFrameLabel(state.caseInfo, k)}. Release slider to load frame.`);
+    });
+
+    slider.addEventListener('change', (event) => {
+      event.stopPropagation();
+      state.isScrubbing = false;
+      requestFrame(Number(event.target.value), container);
+    });
+
+    slider.addEventListener('pointerup', () => {
+      state.isScrubbing = false;
+    });
+
+    slider.addEventListener('keydown', (event) => {
+      event.stopPropagation();
+    });
+
+    slider.addEventListener('keyup', (event) => {
+      event.stopPropagation();
+      requestFrame(Number(event.target.value), container);
+    });
+  }
+
+  updateFrameReadout();
 }
 
 async function main() {
@@ -928,14 +1259,10 @@ async function main() {
     addActors(terrain, water, landslide);
     setupControls(container);
 
-    const defaultFrameIndex = getDefaultFrameIndex(caseInfo);
-    const t = caseInfo.time?.values?.[defaultFrameIndex];
-    const frameCount = Number(caseInfo.time?.frame_count ?? caseInfo.time?.values?.length ?? 1);
-    const timeText = Number.isFinite(t)
-      ? `t = ${t.toFixed(2)} s, frame ${defaultFrameIndex + 1}/${frameCount}`
-      : 'time series';
-
-    setStatus(container, `Loaded Aqaba Case 001 (${timeText}). Drag to rotate, scroll to zoom.`);
+    setStatus(
+      container,
+      `Loaded Aqaba Case 001 (${getFrameLabel(caseInfo, frameIndex)}). Drag to rotate, scroll to zoom.`
+    );
   } catch (error) {
     console.error('[MANTA Gallery] viewer failed:', error);
     setStatus(container, 'Failed to load MANTA Gallery viewer. Check Console and Network tabs.', true);
