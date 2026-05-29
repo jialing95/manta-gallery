@@ -1,6 +1,7 @@
 import '@kitware/vtk.js/Rendering/Profiles/Geometry';
 import vtkActor from '@kitware/vtk.js/Rendering/Core/Actor';
 import vtkMapper from '@kitware/vtk.js/Rendering/Core/Mapper';
+import vtkColorTransferFunction from '@kitware/vtk.js/Rendering/Core/ColorTransferFunction';
 import vtkXMLPolyDataReader from '@kitware/vtk.js/IO/XML/XMLPolyDataReader';
 
 import vtkRenderer from '@kitware/vtk.js/Rendering/Core/Renderer';
@@ -25,6 +26,10 @@ const state = {
   },
   datasets: {
     terrain: null,
+    water: null,
+    landslide: null,
+  },
+  scalarInfo: {
     water: null,
     landslide: null,
   },
@@ -155,6 +160,12 @@ function injectCss() {
       display: inline-block;
     }
 
+    .manta-viewer-legend-value {
+      color: #57606a;
+      font-size: 11px;
+      margin-left: auto;
+    }
+
     .manta-swatch-terrain { background: #9b9b9b; }
     .manta-swatch-water { background: #3c75d9; }
     .manta-swatch-landslide { background: #d65f2e; }
@@ -188,10 +199,12 @@ function setupDom(container) {
       <div class="manta-viewer-legend-row">
         <span class="manta-swatch manta-swatch-water"></span>
         Water surface
+        <span id="water-scalar-readout" class="manta-viewer-legend-value">solid</span>
       </div>
       <div class="manta-viewer-legend-row">
         <span class="manta-swatch manta-swatch-landslide"></span>
         Landslide
+        <span id="landslide-scalar-readout" class="manta-viewer-legend-value">solid</span>
       </div>
     </div>
 
@@ -289,6 +302,238 @@ function setupScene(host) {
   setTimeout(resize, 0);
 }
 
+
+const WATER_COLOR_STOPS = [
+  [0.0, 0.02, 0.12, 0.40],
+  [0.5, 0.86, 0.94, 1.00],
+  [1.0, 0.03, 0.42, 0.95],
+];
+
+const LANDSLIDE_COLOR_STOPS = {
+  hm: [
+    [0.0, 0.25, 0.05, 0.02],
+    [0.5, 0.90, 0.32, 0.12],
+    [1.0, 1.00, 0.86, 0.30],
+  ],
+  m: [
+    [0.0, 1.00, 0.93, 0.55],
+    [0.5, 0.93, 0.46, 0.16],
+    [1.0, 0.48, 0.04, 0.02],
+  ],
+  db: [
+    [0.0, 0.14, 0.10, 0.36],
+    [0.5, 0.92, 0.92, 0.92],
+    [1.0, 0.52, 0.08, 0.10],
+  ],
+};
+
+function getArrayByName(attributes, name) {
+  if (!attributes || !name) return null;
+  if (typeof attributes.getArrayByName === 'function') {
+    return attributes.getArrayByName(name);
+  }
+  return null;
+}
+
+function findDataArray(polyData, names) {
+  const pointData = polyData.getPointData?.();
+  const cellData = polyData.getCellData?.();
+
+  for (const name of names) {
+    const array = getArrayByName(pointData, name);
+    if (array) {
+      return {
+        name,
+        array,
+        attributes: pointData,
+        association: 'point',
+      };
+    }
+  }
+
+  for (const name of names) {
+    const array = getArrayByName(cellData, name);
+    if (array) {
+      return {
+        name,
+        array,
+        attributes: cellData,
+        association: 'cell',
+      };
+    }
+  }
+
+  return null;
+}
+
+function computeFiniteRange(dataArray) {
+  const values = dataArray?.getData?.();
+  if (!values || values.length === 0) return null;
+
+  const numberOfComponents = Math.max(1, dataArray.getNumberOfComponents?.() ?? 1);
+  let minValue = Number.POSITIVE_INFINITY;
+  let maxValue = Number.NEGATIVE_INFINITY;
+
+  for (let i = 0; i < values.length; i += numberOfComponents) {
+    const value = Number(values[i]);
+    if (!Number.isFinite(value)) continue;
+    minValue = Math.min(minValue, value);
+    maxValue = Math.max(maxValue, value);
+  }
+
+  if (!Number.isFinite(minValue) || !Number.isFinite(maxValue)) return null;
+
+  if (minValue === maxValue) {
+    const pad = Math.max(Math.abs(minValue) * 1e-6, 1e-12);
+    return [minValue - pad, maxValue + pad];
+  }
+
+  return [minValue, maxValue];
+}
+
+function computeRobustSymmetricRange(dataArray, percentile = 99.0) {
+  const values = dataArray?.getData?.();
+  if (!values || values.length === 0) return null;
+
+  const numberOfComponents = Math.max(1, dataArray.getNumberOfComponents?.() ?? 1);
+  const magnitudes = [];
+
+  for (let i = 0; i < values.length; i += numberOfComponents) {
+    const value = Number(values[i]);
+    if (!Number.isFinite(value)) continue;
+    magnitudes.push(Math.abs(value));
+  }
+
+  if (magnitudes.length === 0) return null;
+
+  magnitudes.sort((a, b) => a - b);
+  const clampedPercentile = Math.min(100.0, Math.max(0.0, percentile));
+  const index = Math.min(
+    magnitudes.length - 1,
+    Math.max(0, Math.floor((clampedPercentile / 100.0) * (magnitudes.length - 1)))
+  );
+  const limit = Math.max(magnitudes[index], 1e-12);
+
+  return [-limit, limit];
+}
+
+function zeroCenteredRangeIfNeeded(arrayName, range) {
+  const lowerName = arrayName.toLowerCase();
+  const shouldCenter = lowerName === 'wave_amplitude' || lowerName === 'db';
+  if (!shouldCenter || !range) return range;
+
+  const limit = Math.max(Math.abs(range[0]), Math.abs(range[1]), 1e-12);
+  return [-limit, limit];
+}
+
+function resolveDisplayRange({ arrayName, dataArray, rawRange, rangeMode = 'auto', robustPercentile = 99.0 }) {
+  if (!rawRange) return null;
+
+  if (rangeMode === 'robust-symmetric') {
+    return computeRobustSymmetricRange(dataArray, robustPercentile) ?? zeroCenteredRangeIfNeeded(arrayName, rawRange);
+  }
+
+  return zeroCenteredRangeIfNeeded(arrayName, rawRange);
+}
+
+function createTransferFunction(range, stops) {
+  const ctf = vtkColorTransferFunction.newInstance();
+  const [vmin, vmax] = range;
+
+  for (const [position, red, green, blue] of stops) {
+    const value = vmin + position * (vmax - vmin);
+    ctf.addRGBPoint(value, red, green, blue);
+  }
+
+  ctf.setMappingRange?.(vmin, vmax);
+  ctf.updateRange?.();
+
+  return ctf;
+}
+
+function formatScalar(value) {
+  const absValue = Math.abs(value);
+  if ((absValue > 0 && absValue < 1e-2) || absValue >= 1e3) {
+    return value.toExponential(2);
+  }
+  return value.toFixed(3);
+}
+
+function formatRange(range) {
+  if (!range) return '';
+  return `[${formatScalar(range[0])}, ${formatScalar(range[1])}]`;
+}
+
+function setLegendReadout(id, text) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = text;
+}
+
+function applyScalarToActor({
+  actor,
+  polyData,
+  arrayNames,
+  colorStops,
+  fallbackColor,
+  rangeMode = 'auto',
+  robustPercentile = 99.0,
+}) {
+  if (!actor || !polyData) return null;
+
+  const mapper = actor.getMapper();
+  const found = findDataArray(polyData, arrayNames);
+
+  if (!found) {
+    mapper.setScalarVisibility(false);
+    actor.getProperty().setColor(...fallbackColor);
+    console.warn(`[MANTA Gallery] Missing scalar array: ${arrayNames.join(' / ')}`);
+    return null;
+  }
+
+  const rawRange = computeFiniteRange(found.array);
+  const range = resolveDisplayRange({
+    arrayName: found.name,
+    dataArray: found.array,
+    rawRange,
+    rangeMode,
+    robustPercentile,
+  });
+
+  if (!range) {
+    mapper.setScalarVisibility(false);
+    actor.getProperty().setColor(...fallbackColor);
+    console.warn(`[MANTA Gallery] Scalar array has no finite values: ${found.name}`);
+    return null;
+  }
+
+  const lookupTable = createTransferFunction(range, colorStops);
+
+  found.attributes.setActiveScalars?.(found.name);
+
+  if (found.association === 'point') {
+    mapper.setScalarModeToUsePointFieldData?.();
+  } else {
+    mapper.setScalarModeToUseCellFieldData?.();
+  }
+
+  mapper.setColorByArrayName?.(found.name);
+  mapper.setLookupTable(lookupTable);
+  mapper.setScalarRange(range[0], range[1]);
+  mapper.setScalarVisibility(true);
+  mapper.setColorModeToMapScalars?.();
+  mapper.setInterpolateScalarsBeforeMapping?.(true);
+  mapper.modified?.();
+
+  actor.getProperty().setColor(1.0, 1.0, 1.0);
+
+  return {
+    name: found.name,
+    association: found.association,
+    range,
+    rawRange,
+  };
+}
+
 function createSolidActor(polyData, color, opacity) {
   const mapper = vtkMapper.newInstance();
   mapper.setInputData(polyData);
@@ -302,6 +547,46 @@ function createSolidActor(polyData, color, opacity) {
   property.setOpacity(opacity);
 
   return actor;
+}
+
+function createScalarActor(
+  polyData,
+  arrayNames,
+  colorStops,
+  fallbackColor,
+  opacity,
+  options = {}
+) {
+  const actor = createSolidActor(polyData, fallbackColor, opacity);
+  const scalarInfo = applyScalarToActor({
+    actor,
+    polyData,
+    arrayNames,
+    colorStops,
+    fallbackColor,
+    ...options,
+  });
+
+  return { actor, scalarInfo };
+}
+
+function applyLandslideScalar(scalarName) {
+  const colorStops = LANDSLIDE_COLOR_STOPS[scalarName] ?? LANDSLIDE_COLOR_STOPS.hm;
+  const scalarInfo = applyScalarToActor({
+    actor: state.actors.landslide,
+    polyData: state.datasets.landslide,
+    arrayNames: [scalarName],
+    colorStops,
+    fallbackColor: [0.90, 0.32, 0.12],
+  });
+
+  state.scalarInfo.landslide = scalarInfo;
+  setLegendReadout(
+    'landslide-scalar-readout',
+    scalarInfo ? `${scalarInfo.name} ${formatRange(scalarInfo.range)}` : 'solid'
+  );
+
+  state.renderWindow?.render();
 }
 
 async function loadCaseAndData(container) {
@@ -340,18 +625,43 @@ async function loadCaseAndData(container) {
 
 function addActors(terrain, water, landslide) {
   const terrainActor = createSolidActor(terrain, [0.58, 0.58, 0.58], 1.0);
-  const waterActor = createSolidActor(water, [0.10, 0.36, 0.85], 0.72);
-  const landslideActor = createSolidActor(landslide, [0.90, 0.32, 0.12], 0.92);
+  const { actor: waterActor, scalarInfo: waterScalarInfo } = createScalarActor(
+    water,
+    ['wave_amplitude'],
+    WATER_COLOR_STOPS,
+    [0.10, 0.36, 0.85],
+    0.72,
+    { rangeMode: 'robust-symmetric', robustPercentile: 99.0 }
+  );
+  const { actor: landslideActor, scalarInfo: landslideScalarInfo } = createScalarActor(
+    landslide,
+    ['hm'],
+    LANDSLIDE_COLOR_STOPS.hm,
+    [0.90, 0.32, 0.12],
+    0.92
+  );
 
   state.actors.terrain = terrainActor;
   state.actors.water = waterActor;
   state.actors.landslide = landslideActor;
+  state.scalarInfo.water = waterScalarInfo;
+  state.scalarInfo.landslide = landslideScalarInfo;
 
   state.renderer.addActor(terrainActor);
   state.renderer.addActor(waterActor);
   state.renderer.addActor(landslideActor);
 
   resetCamera();
+
+  setLegendReadout(
+    'water-scalar-readout',
+    waterScalarInfo ? `${waterScalarInfo.name} ${formatRange(waterScalarInfo.range)}` : 'solid'
+  );
+
+  setLegendReadout(
+    'landslide-scalar-readout',
+    landslideScalarInfo ? `${landslideScalarInfo.name} ${formatRange(landslideScalarInfo.range)}` : 'solid'
+  );
 }
 
 function resetCamera() {
@@ -383,6 +693,30 @@ function setupControls(container) {
     state.actors.landslide?.setVisibility(event.target.checked);
     state.renderWindow.render();
   });
+
+  const landslideScalarSelect = container.querySelector('#landslide-scalar');
+  if (landslideScalarSelect) {
+    const options = Array.from(landslideScalarSelect.options);
+
+    for (const option of options) {
+      option.disabled = !findDataArray(state.datasets.landslide, [option.value]);
+    }
+
+    const availableOptions = options.filter((option) => !option.disabled);
+    landslideScalarSelect.disabled = availableOptions.length === 0;
+
+    if (availableOptions.length > 0) {
+      if (landslideScalarSelect.selectedOptions[0]?.disabled) {
+        landslideScalarSelect.value = availableOptions[0].value;
+      }
+
+      applyLandslideScalar(landslideScalarSelect.value);
+    }
+
+    landslideScalarSelect.addEventListener('change', (event) => {
+      applyLandslideScalar(event.target.value);
+    });
+  }
 
   container.querySelector('#reset-camera')?.addEventListener('click', () => {
     resetCamera();
