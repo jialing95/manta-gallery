@@ -13,7 +13,7 @@ The terrain is displayed using a sea-split topo-bathymetric style. The water sur
   <div class="manta-viewer-status">Loading MANTA Gallery viewer...</div>
 </div>
 
-<script type="module" src="../assets/js/aqaba_case_001_viewer.js"></script>
+<script type="module" src="../assets/js/aqaba_case_001_viewer.bundle.js"></script>
 
 ## Current export settings
 

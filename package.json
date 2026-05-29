@@ -1,0 +1,31 @@
+{
+  "name": "manta-gallery",
+  "version": "1.0.0",
+  "description": "A lightweight interactive browser-based gallery for visualizing tsunami wave amplitude and landslide material fields exported from MANTA/PyVista.",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build:viewer": "vite build --config viewer/vite.config.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jialing95/manta-gallery.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/jialing95/manta-gallery/issues"
+  },
+  "homepage": "https://github.com/jialing95/manta-gallery#readme",
+  "devDependencies": {
+    "patch-package": "^8.0.1",
+    "vite": "^8.0.14"
+  },
+  "dependencies": {
+    "@kitware/vtk.js": "^32.10.0"
+  }
+}
