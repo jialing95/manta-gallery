@@ -6,6 +6,7 @@ import vtkXMLPolyDataReader from '@kitware/vtk.js/IO/XML/XMLPolyDataReader';
 import vtkPolyData from '@kitware/vtk.js/Common/DataModel/PolyData';
 import vtkPoints from '@kitware/vtk.js/Common/Core/Points';
 import vtkCellArray from '@kitware/vtk.js/Common/Core/CellArray';
+import vtkDataArray from '@kitware/vtk.js/Common/Core/DataArray';
 
 import vtkRenderer from '@kitware/vtk.js/Rendering/Core/Renderer';
 import vtkRenderWindow from '@kitware/vtk.js/Rendering/Core/RenderWindow';
@@ -34,6 +35,10 @@ const state = {
     water: null,
     landslide: null,
   },
+  rawDatasets: {
+    water: null,
+    landslide: null,
+  },
   scalarInfo: {
     water: null,
     landslide: null,
@@ -49,6 +54,10 @@ const state = {
   playTimer: null,
   playIntervalMs: 520,
   activeLandslideScalar: 'hm',
+  mThresholds: {
+    waterMax: 0.30,
+    landslideMin: -0.01,
+  },
   amrCache: new Map(),
   amrVisible: false,
   amrActors: new Map(),
@@ -171,6 +180,30 @@ function injectCss() {
       border-radius: 5px;
       background: #ffffff;
       color: #24292f;
+    }
+
+
+
+    .manta-threshold-controls {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      flex: 0 0 auto;
+      white-space: nowrap;
+    }
+
+    .manta-threshold-controls input[type="text"] {
+      width: 74px;
+      max-width: 74px;
+      box-sizing: border-box;
+      font-size: 13px;
+      line-height: 1.2;
+      padding: 3px 6px;
+      border: 1px solid #c9d1d9;
+      border-radius: 5px;
+      background: #ffffff;
+      color: #24292f;
+      font-variant-numeric: tabular-nums;
     }
 
     .manta-time-controls {
@@ -407,6 +440,18 @@ function setupDom(container) {
           <option value="db">Δb</option>
         </select>
       </label>
+
+
+      <div class="manta-threshold-controls" aria-label="m threshold filters">
+        <label title="Press Enter to apply. Water layer keeps cells with m less than or equal to this value.">
+          Water m≤
+          <input id="water-m-threshold" type="text" inputmode="decimal" value="0.30" autocomplete="off" spellcheck="false">
+        </label>
+        <label title="Press Enter to apply. If the value is exactly 0, the hidden rule uses m > 0 to avoid including zero-m water cells.">
+          Landslide m≥
+          <input id="landslide-m-threshold" type="text" inputmode="decimal" value="-0.01" autocomplete="off" spellcheck="false">
+        </label>
+      </div>
 
       <div class="manta-time-controls">
         <button id="play-toggle" type="button" disabled>Play</button>
@@ -1157,6 +1202,213 @@ function createScalarActor(
   return { actor, scalarInfo };
 }
 
+
+function getPointScalarArray(polyData, name) {
+  const pointData = polyData?.getPointData?.();
+  return getArrayByName(pointData, name);
+}
+
+function parseMThresholdValue(textValue, fallbackValue) {
+  const value = Number(String(textValue ?? '').trim());
+  return Number.isFinite(value) ? value : fallbackValue;
+}
+
+function getPolyDataPointCount(polyData) {
+  const points = polyData?.getPoints?.();
+  if (!points) return 0;
+  if (typeof points.getNumberOfPoints === 'function') {
+    return points.getNumberOfPoints();
+  }
+  const data = points.getData?.();
+  return data ? Math.floor(data.length / 3) : 0;
+}
+
+function clonePointDataArrays(sourcePolyData, targetPolyData, oldToNew) {
+  const sourcePointData = sourcePolyData?.getPointData?.();
+  const targetPointData = targetPolyData?.getPointData?.();
+  if (!sourcePointData || !targetPointData || !oldToNew || oldToNew.size === 0) return;
+
+  let arrays = [];
+  if (typeof sourcePointData.getArrays === 'function') {
+    arrays = sourcePointData.getArrays();
+  } else if (typeof sourcePointData.getNumberOfArrays === 'function' && typeof sourcePointData.getArrayByIndex === 'function') {
+    const n = sourcePointData.getNumberOfArrays();
+    for (let i = 0; i < n; i += 1) arrays.push(sourcePointData.getArrayByIndex(i));
+  }
+
+  const orderedMap = Array.from(oldToNew.entries());
+
+  for (const array of arrays) {
+    const sourceValues = array?.getData?.();
+    if (!sourceValues) continue;
+
+    const name = array.getName?.() ?? 'array';
+    const nComp = Math.max(1, array.getNumberOfComponents?.() ?? 1);
+    const TargetArrayType = sourceValues.constructor ?? Float32Array;
+    const targetValues = new TargetArrayType(oldToNew.size * nComp);
+
+    for (const [oldId, newId] of orderedMap) {
+      const srcBase = oldId * nComp;
+      const dstBase = newId * nComp;
+      for (let c = 0; c < nComp; c += 1) {
+        targetValues[dstBase + c] = sourceValues[srcBase + c];
+      }
+    }
+
+    const copiedArray = vtkDataArray.newInstance({
+      name,
+      numberOfComponents: nComp,
+      values: targetValues,
+    });
+    targetPointData.addArray(copiedArray);
+  }
+}
+
+function filterPolyDataByM(polyData, predicate) {
+  const mArray = getPointScalarArray(polyData, 'm');
+  const mValues = mArray?.getData?.();
+  const points = polyData?.getPoints?.();
+  const pointValues = points?.getData?.();
+  const polys = polyData?.getPolys?.();
+  const polyValues = polys?.getData?.();
+
+  if (!mArray || !mValues || !points || !pointValues || !polys || !polyValues) {
+    return polyData;
+  }
+
+  const pointCount = getPolyDataPointCount(polyData);
+  const mComp = Math.max(1, mArray.getNumberOfComponents?.() ?? 1);
+
+  function keepPoint(pointId) {
+    if (!Number.isInteger(pointId) || pointId < 0 || pointId >= pointCount) return false;
+    const value = Number(mValues[pointId * mComp]);
+    return Number.isFinite(value) && predicate(value);
+  }
+
+  const oldToNew = new Map();
+  const newPointValues = [];
+  const newPolyValues = [];
+
+  function mapPoint(oldId) {
+    if (oldToNew.has(oldId)) return oldToNew.get(oldId);
+    const newId = oldToNew.size;
+    oldToNew.set(oldId, newId);
+    const base = oldId * 3;
+    newPointValues.push(
+      Number(pointValues[base] ?? 0),
+      Number(pointValues[base + 1] ?? 0),
+      Number(pointValues[base + 2] ?? 0)
+    );
+    return newId;
+  }
+
+  let offset = 0;
+  while (offset < polyValues.length) {
+    const n = Number(polyValues[offset]);
+    offset += 1;
+    if (!Number.isInteger(n) || n <= 0 || offset + n > polyValues.length) break;
+
+    const ids = [];
+    let keep = true;
+    for (let i = 0; i < n; i += 1) {
+      const id = Number(polyValues[offset + i]);
+      ids.push(id);
+      if (!keepPoint(id)) keep = false;
+    }
+
+    if (keep) {
+      newPolyValues.push(n);
+      for (const id of ids) newPolyValues.push(mapPoint(id));
+    }
+    offset += n;
+  }
+
+  const filtered = vtkPolyData.newInstance();
+  const filteredPoints = vtkPoints.newInstance();
+  filteredPoints.setData(Float32Array.from(newPointValues), 3);
+  filtered.setPoints(filteredPoints);
+
+  const filteredPolys = vtkCellArray.newInstance();
+  filteredPolys.setData(Uint32Array.from(newPolyValues));
+  filtered.setPolys(filteredPolys);
+
+  clonePointDataArrays(polyData, filtered, oldToNew);
+  return filtered;
+}
+
+function filterWaterDataset(rawPolyData) {
+  const threshold = Number(state.mThresholds.waterMax);
+  const waterMax = Number.isFinite(threshold) ? threshold : 0.30;
+  return filterPolyDataByM(rawPolyData, (m) => m <= waterMax);
+}
+
+function filterLandslideDataset(rawPolyData) {
+  const threshold = Number(state.mThresholds.landslideMin);
+  const landslideMin = Number.isFinite(threshold) ? threshold : -0.01;
+  const eps = 1e-12;
+  return filterPolyDataByM(rawPolyData, (m) => {
+    if (Math.abs(landslideMin) <= eps) return m > 0.0;
+    return m >= landslideMin;
+  });
+}
+
+function applyMThresholdsToRawDatasets() {
+  if (state.rawDatasets.water) {
+    state.datasets.water = filterWaterDataset(state.rawDatasets.water);
+  }
+  if (state.rawDatasets.landslide) {
+    state.datasets.landslide = filterLandslideDataset(state.rawDatasets.landslide);
+  }
+}
+
+function applyMThresholdInputs(container) {
+  const waterInput = container.querySelector('#water-m-threshold');
+  const landslideInput = container.querySelector('#landslide-m-threshold');
+
+  const waterValue = parseMThresholdValue(waterInput?.value, state.mThresholds.waterMax);
+  const landslideValue = parseMThresholdValue(landslideInput?.value, state.mThresholds.landslideMin);
+
+  state.mThresholds.waterMax = waterValue;
+  state.mThresholds.landslideMin = landslideValue;
+
+  if (waterInput) waterInput.value = String(waterValue);
+  if (landslideInput) landslideInput.value = String(landslideValue);
+
+  applyMThresholdsToRawDatasets();
+  updateCurrentFrameActors();
+
+  setStatus(
+    container,
+    `Applied m thresholds: water m≤${waterValue}, landslide m≥${landslideValue}. ` +
+      `Frame ${state.currentFrameIndex + 1}/${state.frameCount}.`
+  );
+}
+
+function setupMThresholdControls(container) {
+  const waterInput = container.querySelector('#water-m-threshold');
+  const landslideInput = container.querySelector('#landslide-m-threshold');
+
+  if (waterInput) waterInput.value = String(state.mThresholds.waterMax);
+  if (landslideInput) landslideInput.value = String(state.mThresholds.landslideMin);
+
+  for (const input of [waterInput, landslideInput]) {
+    if (!input) continue;
+    for (const eventName of ['pointerdown', 'mousedown', 'touchstart', 'wheel', 'dblclick']) {
+      input.addEventListener(eventName, (event) => {
+        event.stopPropagation();
+      }, { passive: true });
+    }
+    input.addEventListener('keydown', (event) => {
+      event.stopPropagation();
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        stopPlayback();
+        applyMThresholdInputs(container);
+      }
+    });
+  }
+}
+
 function applyLandslideScalar(scalarName) {
   state.activeLandslideScalar = scalarName;
   const colorStops = LANDSLIDE_COLOR_STOPS[scalarName] ?? LANDSLIDE_COLOR_STOPS.hm;
@@ -1247,16 +1499,17 @@ async function loadCaseAndData(container) {
   ]);
 
   state.datasets.terrain = terrain;
-  state.datasets.water = frameData.water;
-  state.datasets.landslide = frameData.landslide;
+  state.rawDatasets.water = frameData.water;
+  state.rawDatasets.landslide = frameData.landslide;
+  applyMThresholdsToRawDatasets();
 
   prefetchNearbyFrames(state.currentFrameIndex);
 
   return {
     caseInfo,
     terrain,
-    water: frameData.water,
-    landslide: frameData.landslide,
+    water: state.datasets.water,
+    landslide: state.datasets.landslide,
     frameIndex: state.currentFrameIndex,
   };
 }
@@ -1395,8 +1648,9 @@ async function requestFrame(frameIndex, container) {
     setStatus(container, `Loading ${getFrameLabel(state.caseInfo, k)}...`);
     const frameData = await readFrameData(k);
 
-    state.datasets.water = frameData.water;
-    state.datasets.landslide = frameData.landslide;
+    state.rawDatasets.water = frameData.water;
+    state.rawDatasets.landslide = frameData.landslide;
+    applyMThresholdsToRawDatasets();
     state.currentFrameIndex = k;
 
     updateCurrentFrameActors();
@@ -1560,6 +1814,7 @@ function setupControls(container) {
       requestFrame(Number(event.target.value), container);
     });
   }
+  setupMThresholdControls(container);
 
   updateFrameReadout();
 }
