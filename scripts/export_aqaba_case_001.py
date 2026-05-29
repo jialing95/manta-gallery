@@ -50,6 +50,11 @@ SOURCE = "fort"
 FRAME_INDEX = 20
 SEA_LEVEL = 0.0
 
+# Browser time-series export.
+EXPORT_FRAME_MODE = "all"
+EXPORT_FRAME_STEP = 1
+EXPORT_FRAME_INDICES = [0, 10, 20, 30, 40, 50, 60]
+
 # Browser-side default thresholds
 WATER_M_DEFAULT = 0.30
 LANDSLIDE_M_DEFAULT = 0.0
@@ -94,6 +99,156 @@ TITLE = "Aqaba landslide-tsunami simulation"
 # =============================================================================
 # Utilities
 # =============================================================================
+
+# =============================================================================
+# Time-series export helpers
+# =============================================================================
+
+class RangeAccumulator:
+    """Track a global finite min/max range across exported frames."""
+
+    def __init__(self) -> None:
+        self.vmin = None
+        self.vmax = None
+
+    def update(self, a: np.ndarray) -> None:
+        arr = np.asarray(a, dtype=float)
+        vals = arr[np.isfinite(arr)]
+        if vals.size == 0:
+            return
+        lo = float(np.nanmin(vals))
+        hi = float(np.nanmax(vals))
+        self.vmin = lo if self.vmin is None else min(self.vmin, lo)
+        self.vmax = hi if self.vmax is None else max(self.vmax, hi)
+
+    def as_list(self):
+        return [self.vmin, self.vmax]
+
+
+def clear_frame_dir(path: Path, pattern: str = "frame_*.vtp") -> None:
+    """Remove stale exported frames without deleting the directory itself."""
+    path.mkdir(parents=True, exist_ok=True)
+    for old in path.glob(pattern):
+        old.unlink()
+
+
+def total_size_mb(path: Path) -> float:
+    return sum(p.stat().st_size for p in path.rglob("*") if p.is_file()) / 1024.0 / 1024.0
+
+
+def cube_nt(cube) -> int:
+    try:
+        return int(getattr(cube, "nt", 0) or 0)
+    except Exception:
+        return 0
+
+
+def get_export_frame_indices(cube) -> list[int]:
+    """Choose native cube frames to export as browser frames."""
+    nt = cube_nt(cube)
+    if nt <= 0:
+        return [int(FRAME_INDEX)]
+
+    if EXPORT_FRAME_MODE == "selected":
+        frames: list[int] = []
+        for k in EXPORT_FRAME_INDICES:
+            kk = int(k)
+            if 0 <= kk < nt:
+                frames.append(kk)
+        if 0 <= int(FRAME_INDEX) < nt:
+            frames.append(int(FRAME_INDEX))
+        if not frames:
+            frames = [0]
+        return sorted(set(frames))
+
+    step = int(max(1, EXPORT_FRAME_STEP))
+    frames = list(range(0, nt, step))
+    if (nt - 1) not in frames:
+        frames.append(nt - 1)
+    if 0 <= int(FRAME_INDEX) < nt:
+        frames.append(int(FRAME_INDEX))
+    return sorted(set(frames))
+
+
+def get_frame_times(cube, frame_indices: list[int]) -> list[float]:
+    try:
+        times = cube.get_times()
+    except Exception:
+        times = None
+
+    out: list[float] = []
+    for k in frame_indices:
+        value = float(k)
+        try:
+            if times is not None and len(times) > int(k):
+                value = float(times[int(k)])
+        except Exception:
+            pass
+        out.append(value)
+    return out
+
+
+def build_water_surface(F_full: Dict[str, np.ndarray]):
+    """Build one strided water frame while preserving m for later thresholding."""
+    F_water = apply_stride(F_full, WATER_STRIDE)
+
+    X = F_water["X"]
+    Y = F_water["Y"]
+    b0 = F_water["b0"]
+    h = F_water["h"]
+    eta = F_water["eta"]
+    m = F_water["m"]
+    wave_amplitude = F_water["wave_amplitude"]
+
+    # Wet/dry is physical depth + finite eta, not the default m threshold.
+    wet = np.isfinite(h) & (h > float(WATER_DRY_TOL)) & np.isfinite(eta)
+
+    # Ocean-base gate removes subaerial/landslide-top artifacts while preserving
+    # ocean cells with m > WATER_M_DEFAULT for future browser-side sliders.
+    if WATER_REQUIRE_OCEAN_BASE:
+        ocean_base = np.isfinite(b0) & (b0 <= float(SEA_LEVEL) + float(WATER_OCEAN_B0_EPS))
+        water_mask = wet & ocean_base
+    else:
+        water_mask = wet
+
+    # Robust outlier guard, independent of m.
+    amp_limit = robust_abs_limit(wave_amplitude[water_mask])
+    if amp_limit is not None:
+        water_mask = water_mask & np.isfinite(wave_amplitude) & (np.abs(wave_amplitude) <= amp_limit)
+
+    Z_water = np.where(water_mask, eta, np.nan)
+    water_amp = np.where(water_mask, wave_amplitude, np.nan)
+    water_m = np.where(water_mask, m, np.nan)
+
+    return X, Y, Z_water, water_amp, water_m, amp_limit
+
+
+def build_landslide_surface(F_full: Dict[str, np.ndarray], global_landslide_roi: Tuple[int, int, int, int]):
+    """Build one strided/cropped landslide frame."""
+    F_ls = apply_stride(F_full, LANDSLIDE_STRIDE)
+    F_ls_roi = crop_dict_to_roi(F_ls, global_landslide_roi)
+
+    X = F_ls_roi["X"]
+    Y = F_ls_roi["Y"]
+    b = F_ls_roi["b"]
+    hm = F_ls_roi["hm"]
+    m = F_ls_roi["m"]
+    db = F_ls_roi["db"]
+
+    slide_candidate = (
+        np.isfinite(hm)
+        & np.isfinite(m)
+        & np.isfinite(db)
+        & (hm > LANDSLIDE_ROI_HM_EPS)
+    )
+
+    Z_slide = np.where(slide_candidate, b + hm, np.nan)
+    slide_hm = np.where(slide_candidate, hm, np.nan)
+    slide_m = np.where(slide_candidate, m, np.nan)
+    slide_db = np.where(slide_candidate, db, np.nan)
+
+    return X, Y, Z_slide, slide_hm, slide_m, slide_db
+
 
 def insert_manta_src(path: Path) -> None:
     path = path.expanduser().resolve()
@@ -504,134 +659,96 @@ def compute_global_landslide_roi(cube) -> Tuple[Tuple[int, int, int, int], Dict[
 def export_case() -> None:
     cube = load_cube()
 
-    # Compute fixed global landslide ROI before exporting the target frame.
+    frame_indices = get_export_frame_indices(cube)
+    default_index = frame_indices.index(int(FRAME_INDEX)) if int(FRAME_INDEX) in frame_indices else 0
+    frame_times = get_frame_times(cube, frame_indices)
+
+    print("[TIMELINE] Exporting browser time series")
+    print(f"[TIMELINE] native frames: {frame_indices[:8]}{'...' if len(frame_indices) > 8 else ''}, n={len(frame_indices)}")
+    print(f"[TIMELINE] default browser index={default_index}, native frame={frame_indices[default_index]}")
+
+    # Fixed landslide ROI is computed once and reused by all landslide frames.
     global_landslide_roi, global_landslide_roi_meta = compute_global_landslide_roi(cube)
 
-    S = cube.get_slice(FRAME_INDEX)
-    F_full = prepare_fields(S)
-
     OUTDIR.mkdir(parents=True, exist_ok=True)
+    water_dir = OUTDIR / "water"
+    landslide_dir = OUTDIR / "landslide"
+    clear_frame_dir(water_dir)
+    clear_frame_dir(landslide_dir)
 
-    # Terrain: static full-domain high-resolution background.
-    # This file is written once and reused by all future time frames.
-    F_terrain = apply_stride(F_full, TERRAIN_STRIDE)
-
-    Xt = F_terrain["X"]
-    Yt = F_terrain["Y"]
-    b0t = F_terrain["b0"]
-
+    # Static terrain: write once only. Use the default display frame to obtain
+    # the grid and b0, but do not create per-frame DEM files.
+    S_default = cube.get_slice(frame_indices[default_index])
+    F_default = prepare_fields(S_default)
+    F_terrain = apply_stride(F_default, TERRAIN_STRIDE)
     write_surface_vtp(
-        Xt,
-        Yt,
-        b0t,
-        {"elevation": b0t},
+        F_terrain["X"],
+        F_terrain["Y"],
+        F_terrain["b0"],
+        {"elevation": F_terrain["b0"]},
         OUTDIR / "terrain.vtp",
     )
 
-    # Water: full-domain time-dependent frame, kept coarser than terrain.
-    F_water = apply_stride(F_full, WATER_STRIDE)
+    water_amp_range = RangeAccumulator()
+    water_m_range = RangeAccumulator()
+    slide_hm_range = RangeAccumulator()
+    slide_m_range = RangeAccumulator()
+    slide_db_range = RangeAccumulator()
+    water_amp_limits: Dict[str, Optional[float]] = {}
 
-    X = F_water["X"]
-    Y = F_water["Y"]
-    b0w = F_water["b0"]
-    h = F_water["h"]
-    eta = F_water["eta"]
-    m = F_water["m"]
-    wave_amplitude = F_water["wave_amplitude"]
+    for out_i, native_k in enumerate(frame_indices):
+        print(f"[FRAME] {out_i + 1:>3}/{len(frame_indices)}  native={native_k}")
+        S = cube.get_slice(int(native_k))
+        F_full = prepare_fields(S)
 
-    # Base water mask follows the MANTA/CAEsar convention: wet/dry is defined
-    # by depth and finite eta, not by the default m threshold.
-    wet = np.isfinite(h) & (h > float(WATER_DRY_TOL)) & np.isfinite(eta)
+        Xw, Yw, Zw, water_amp, water_m, amp_limit = build_water_surface(F_full)
+        write_surface_vtp(
+            Xw,
+            Yw,
+            Zw,
+            {
+                "wave_amplitude": water_amp,
+                "m": water_m,
+            },
+            water_dir / f"frame_{out_i:04d}.vtp",
+        )
 
-    # Ocean-base gate removes subaerial/landslide-top artifacts from the water
-    # surface while still preserving ocean cells with m > WATER_M_DEFAULT for
-    # future browser-side threshold sliders.
-    if WATER_REQUIRE_OCEAN_BASE:
-        ocean_base = np.isfinite(b0w) & (b0w <= float(SEA_LEVEL) + float(WATER_OCEAN_B0_EPS))
-        water_mask = wet & ocean_base
-    else:
-        water_mask = wet
+        Xs, Ys, Zs, slide_hm, slide_m, slide_db = build_landslide_surface(F_full, global_landslide_roi)
+        write_surface_vtp(
+            Xs,
+            Ys,
+            Zs,
+            {
+                "hm": slide_hm,
+                "m": slide_m,
+                "db": slide_db,
+            },
+            landslide_dir / f"frame_{out_i:04d}.vtp",
+        )
 
-    # Robust outlier guard: isolated eta/wave_amplitude spikes should not become
-    # browser water-surface geometry. This is deliberately independent of m.
-    amp_limit = robust_abs_limit(wave_amplitude[water_mask])
-    if amp_limit is not None:
-        with np.errstate(invalid="ignore"):
-            water_mask = water_mask & np.isfinite(wave_amplitude) & (np.abs(wave_amplitude) <= amp_limit)
-
-    Z_water = np.where(water_mask, eta, np.nan)
-    water_amp = np.where(water_mask, wave_amplitude, np.nan)
-    water_m = np.where(water_mask, m, np.nan)
-
-    write_surface_vtp(
-        X,
-        Y,
-        Z_water,
-        {
-            "wave_amplitude": water_amp,
-            "m": water_m,
-        },
-        OUTDIR / "water" / "frame_0000.vtp",
-    )
-
-    # Landslide: finer stride + global ROI crop
-    F_ls = apply_stride(F_full, LANDSLIDE_STRIDE)
-    F_ls_roi = crop_dict_to_roi(F_ls, global_landslide_roi)
-
-    Xs = F_ls_roi["X"]
-    Ys = F_ls_roi["Y"]
-    bs = F_ls_roi["b"]
-    hms = F_ls_roi["hm"]
-    ms = F_ls_roi["m"]
-    dbs = F_ls_roi["db"]
-
-    slide_candidate = (
-        np.isfinite(hms)
-        & np.isfinite(ms)
-        & np.isfinite(dbs)
-        & (hms > LANDSLIDE_ROI_HM_EPS)
-    )
-
-    Z_slide = np.where(slide_candidate, bs + hms, np.nan)
-    slide_hm = np.where(slide_candidate, hms, np.nan)
-    slide_m = np.where(slide_candidate, ms, np.nan)
-    slide_db = np.where(slide_candidate, dbs, np.nan)
-
-    write_surface_vtp(
-        Xs,
-        Ys,
-        Z_slide,
-        {
-            "hm": slide_hm,
-            "m": slide_m,
-            "db": slide_db,
-        },
-        OUTDIR / "landslide" / "frame_0000.vtp",
-    )
-
-    t0 = 0.0
-    try:
-        times = cube.get_times()
-        if times is not None and len(times) > FRAME_INDEX:
-            t0 = float(times[FRAME_INDEX])
-    except Exception:
-        pass
+        water_amp_range.update(water_amp)
+        water_m_range.update(water_m)
+        slide_hm_range.update(slide_hm)
+        slide_m_range.update(slide_m)
+        slide_db_range.update(slide_db)
+        water_amp_limits[str(out_i)] = amp_limit
 
     case = {
         "id": OUTDIR.name,
         "title": TITLE,
-        "description": "Single-frame gallery-ready export of wave amplitude and landslide material fields.",
+        "description": "Time-series gallery-ready export of wave amplitude and landslide material fields.",
         "source": {
             "kind": SOURCE,
             "case_dir": str(CASE_DIR),
-            "frame_index": int(FRAME_INDEX),
             "raw_output": "not included",
         },
         "time": {
-            "mode": "single_frame",
+            "mode": "time_series",
             "unit": "s",
-            "values": [float(t0)],
-            "default_index": 0,
+            "values": [float(t) for t in frame_times],
+            "default_index": int(default_index),
+            "frame_count": int(len(frame_indices)),
+            "native_indices": [int(k) for k in frame_indices],
         },
         "layers": {
             "terrain": {
@@ -640,15 +757,8 @@ def export_case() -> None:
                 "time_varying": False,
                 "style": {
                     "mode": "sea_split",
-                    "below_sea_level": {
-                        "label": "Bathymetry",
-                        "colormap": "cmocean.deep",
-                    },
-                    "above_sea_level": {
-                        "label": "Topography",
-                        "colormap": "cmcrameri.grayC",
-                        "relief": True,
-                    },
+                    "below_sea_level": {"label": "Bathymetry", "colormap": "cmocean.deep"},
+                    "above_sea_level": {"label": "Topography", "colormap": "cmcrameri.grayC", "relief": True},
                 },
             },
             "water": {
@@ -660,13 +770,15 @@ def export_case() -> None:
                 "filter_rule": "m <= water_m",
                 "default_m": float(WATER_M_DEFAULT),
                 "m_range": [0.0, 1.0],
+                "m_threshold_applied_at_export": False,
                 "label": "Wave amplitude",
                 "unit": "m",
                 "colormap": "dclaw.tsunami",
                 "colormap_label": "Tsunami",
                 "colorbar": {
                     "side": "right",
-                    "range": nan_range(water_amp),
+                    "range": water_amp_range.as_list(),
+                    "range_mode": "robust_symmetric_per_frame_in_viewer",
                 },
             },
             "landslide": {
@@ -679,31 +791,18 @@ def export_case() -> None:
                 "m_range": [0.0, 1.0],
                 "default_scalar": "hm",
                 "colormap": "magma",
-                "colorbar": {
-                    "side": "left",
-                },
+                "colorbar": {"side": "left"},
                 "available_scalars": {
-                    "hm": {
-                        "label": "hm (solid thickness)",
-                        "unit": "m",
-                        "range": nan_range(slide_hm),
-                    },
-                    "m": {
-                        "label": "m (solid fraction)",
-                        "unit": "1",
-                        "range": [0.0, 1.0],
-                    },
-                    "db": {
-                        "label": "Δb (bed change)",
-                        "unit": "m",
-                        "range": nan_range(slide_db),
-                    },
+                    "hm": {"label": "hm (solid thickness)", "unit": "m", "range": slide_hm_range.as_list()},
+                    "m": {"label": "m (solid fraction)", "unit": "1", "range": [0.0, 1.0]},
+                    "db": {"label": "Δb (bed change)", "unit": "m", "range": slide_db_range.as_list()},
                 },
             },
         },
         "ui": {
             "show_layer_toggles": True,
-            "show_time_slider": False,
+            "show_time_slider": True,
+            "show_play_button": True,
             "show_water_m_slider": True,
             "show_landslide_m_slider": True,
             "show_landslide_scalar_selector": True,
@@ -711,11 +810,11 @@ def export_case() -> None:
             "show_dem_style_controls": False,
             "show_vertical_exaggeration": False,
         },
-        "camera": {
-            "preset": "oblique",
-        },
+        "camera": {"preset": "oblique"},
         "processing": {
             "sea_level": float(SEA_LEVEL),
+            "export_frame_mode": str(EXPORT_FRAME_MODE),
+            "export_frame_step": int(EXPORT_FRAME_STEP),
             "stride": {
                 "terrain": int(TERRAIN_STRIDE),
                 "water": int(WATER_STRIDE),
@@ -729,21 +828,23 @@ def export_case() -> None:
                 "roi_rc_exclusive": [int(v) for v in global_landslide_roi],
                 "scan": global_landslide_roi_meta,
             },
-            "terrain_surface": "Static high-resolution DEM VTP reused by all time-dependent frames.",
-            "water_surface": "Colored by wave amplitude; m is exported as a filter scalar for browser-side thresholding, not hard-filtered at export.",
-            "water_export_mask": {
+            "water_surface": {
+                "description": "Colored by wave amplitude; m is preserved for browser-side thresholding.",
                 "dry_tolerance": float(WATER_DRY_TOL),
-                "ocean_base_gate": bool(WATER_REQUIRE_OCEAN_BASE),
-                "ocean_b0_eps": float(WATER_OCEAN_B0_EPS),
+                "ocean_base_gate": {
+                    "enabled": bool(WATER_REQUIRE_OCEAN_BASE),
+                    "b0_max": float(SEA_LEVEL + WATER_OCEAN_B0_EPS),
+                },
                 "m_threshold_applied_at_export": False,
                 "amplitude_outlier_guard": {
+                    "enabled": True,
                     "percentile": float(WATER_AMP_ROBUST_PERCENTILE),
                     "factor": float(WATER_AMP_OUTLIER_FACTOR),
                     "min_limit": float(WATER_AMP_MIN_LIMIT),
-                    "limit_used": None if amp_limit is None else float(amp_limit),
+                    "per_browser_frame_limit": water_amp_limits,
                 },
             },
-            "landslide_surface": "Cropped to global landslide ROI, colored by hm, m, or Δb, and filtered by landslide solid-fraction cutoff.",
+            "landslide_surface": "Cropped to global landslide ROI, colored by hm, m, or Δb, and filtered by browser-side landslide solid-fraction cutoff.",
         },
     }
 
@@ -752,14 +853,17 @@ def export_case() -> None:
 
     print_export_summary(
         terrain_path=OUTDIR / "terrain.vtp",
-        water_path=OUTDIR / "water" / "frame_0000.vtp",
-        landslide_path=OUTDIR / "landslide" / "frame_0000.vtp",
+        water_dir=water_dir,
+        landslide_dir=landslide_dir,
         case_path=OUTDIR / "case.json",
-        water_amp=water_amp,
-        water_m=water_m,
-        slide_hm=slide_hm,
-        slide_m=slide_m,
-        slide_db=slide_db,
+        frame_count=len(frame_indices),
+        default_index=default_index,
+        native_default=frame_indices[default_index],
+        water_amp_range=water_amp_range.as_list(),
+        water_m_range=water_m_range.as_list(),
+        slide_hm_range=slide_hm_range.as_list(),
+        slide_m_range=slide_m_range.as_list(),
+        slide_db_range=slide_db_range.as_list(),
         roi=global_landslide_roi,
     )
 
@@ -767,74 +871,46 @@ def export_case() -> None:
 def print_export_summary(
     *,
     terrain_path: Path,
-    water_path: Path,
-    landslide_path: Path,
+    water_dir: Path,
+    landslide_dir: Path,
     case_path: Path,
-    water_amp: np.ndarray,
-    water_m: np.ndarray,
-    slide_hm: np.ndarray,
-    slide_m: np.ndarray,
-    slide_db: np.ndarray,
+    frame_count: int,
+    default_index: int,
+    native_default: int,
+    water_amp_range,
+    water_m_range,
+    slide_hm_range,
+    slide_m_range,
+    slide_db_range,
     roi: Tuple[int, int, int, int],
 ) -> None:
-    water_keep = (
-        np.isfinite(water_amp)
-        & np.isfinite(water_m)
-        & (water_m <= WATER_M_DEFAULT)
-    )
+    water_frames = sorted(water_dir.glob("frame_*.vtp"))
+    landslide_frames = sorted(landslide_dir.glob("frame_*.vtp"))
 
-    slide_keep = (
-        np.isfinite(slide_hm)
-        & np.isfinite(slide_m)
-        & np.isfinite(slide_db)
-        & (slide_m >= LANDSLIDE_M_DEFAULT)
-    )
-
-    print("[OK] Exported Aqaba Case 001")
+    print("[OK] Exported Aqaba Case 001 time series")
     print(f"  outdir:    {OUTDIR}")
     print(f"  terrain:   {terrain_path} ({file_size_mb(terrain_path):.2f} MB)")
-    print(f"  water:     {water_path} ({file_size_mb(water_path):.2f} MB)")
-    print(f"  landslide: {landslide_path} ({file_size_mb(landslide_path):.2f} MB)")
+    print(f"  water:     {len(water_frames)} frames ({total_size_mb(water_dir):.2f} MB)")
+    print(f"  landslide: {len(landslide_frames)} frames ({total_size_mb(landslide_dir):.2f} MB)")
     print(f"  manifest:  {case_path} ({file_size_mb(case_path):.3f} MB)")
+    print(f"  package:   {total_size_mb(OUTDIR):.2f} MB")
     print("")
     print("Settings")
-    print(f"  frame_index:            {FRAME_INDEX}")
+    print(f"  frame_count:            {frame_count}")
+    print(f"  default browser index:  {default_index}")
+    print(f"  default native frame:   {native_default}")
     print(f"  terrain stride:         {TERRAIN_STRIDE}")
     print(f"  water stride:           {WATER_STRIDE}")
     print(f"  landslide stride:       {LANDSLIDE_STRIDE}")
     print(f"  landslide roi pad:      {LANDSLIDE_ROI_PAD}")
     print(f"  landslide roi rc:       {roi}")
     print("")
-    print("Default display diagnostics")
-    water_exported = np.isfinite(water_amp)
-    print(f"  water exported cells: {int(water_exported.sum())} / {water_amp.size}")
-    if np.any(water_exported):
-        print(
-            "    exported wave amplitude range: "
-            f"{float(np.nanmin(water_amp[water_exported])):.6g} to "
-            f"{float(np.nanmax(water_amp[water_exported])):.6g}"
-        )
-    print(f"  water m <= {WATER_M_DEFAULT} default view: {int(water_keep.sum())} / {water_amp.size}")
-    if np.any(water_keep):
-        print(
-            "    default-view wave amplitude range: "
-            f"{float(np.nanmin(water_amp[water_keep])):.6g} to "
-            f"{float(np.nanmax(water_amp[water_keep])):.6g}"
-        )
-    print(f"  landslide m >= {LANDSLIDE_M_DEFAULT}: {int(slide_keep.sum())} / {slide_hm.size}")
-    if np.any(slide_keep):
-        print(
-            f"    hm range: {float(np.nanmin(slide_hm[slide_keep])):.6g} to "
-            f"{float(np.nanmax(slide_hm[slide_keep])):.6g}"
-        )
-        print(
-            f"    m range:  {float(np.nanmin(slide_m[slide_keep])):.6g} to "
-            f"{float(np.nanmax(slide_m[slide_keep])):.6g}"
-        )
-        print(
-            f"    db range: {float(np.nanmin(slide_db[slide_keep])):.6g} to "
-            f"{float(np.nanmax(slide_db[slide_keep])):.6g}"
-        )
+    print("Global exported scalar ranges")
+    print(f"  water wave_amplitude:   {water_amp_range}")
+    print(f"  water m:                {water_m_range}")
+    print(f"  landslide hm:           {slide_hm_range}")
+    print(f"  landslide m:            {slide_m_range}")
+    print(f"  landslide db:           {slide_db_range}")
 
 
 if __name__ == "__main__":

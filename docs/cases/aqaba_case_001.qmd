@@ -7,7 +7,7 @@ toc: false
 ::: {.manta-case-intro}
 ## Overview
 
-This case presents a single-frame gallery-ready export from a D-Claw landslide-tsunami simulation in the Gulf of Aqaba.
+This case presents a time-series gallery-ready export from a D-Claw landslide-tsunami simulation in the Gulf of Aqaba.
 
 The terrain is displayed as a static high-resolution topographic and bathymetric surface. The water surface is colored by wave amplitude using the **Tsunami** theme, while the landslide material layer carries `hm`, `m`, and `Δb` fields for interactive scalar switching in the browser viewer.
 :::
@@ -29,14 +29,15 @@ The terrain is displayed as a static high-resolution topographic and bathymetric
 | Item | Value |
 |---|---|
 | Source | FORT-native |
-| Frame index | `20` |
+| Default display frame | `20` |
+| Frame count | all exported time frames |
 | Terrain stride | `5` |
 | Water stride | `20` |
 | Landslide stride | `5` |
 | Terrain reuse | Single static `terrain.vtp` reused across frames; DEM is not regenerated or updated online during playback. |
 | Landslide ROI | Global union over all `72` frames |
 | Landslide ROI pad | `24` cells |
-| Water threshold | `m <= 0.3` |
+| Water threshold | default `m <= 0.3`; `m` is preserved for future browser-side thresholding |
 | Landslide threshold | `m >= 0.0` |
 
 </details>
