@@ -97,6 +97,22 @@ def nan_range(a: np.ndarray):
     return [float(np.nanmin(arr)), float(np.nanmax(arr))]
 
 
+def apply_stride(F: Dict[str, np.ndarray], stride: int) -> Dict[str, np.ndarray]:
+    """Downsample all 2D array fields with the same row/column stride."""
+    stride = int(max(1, stride))
+    if stride == 1:
+        return F
+
+    out: Dict[str, np.ndarray] = {}
+    for key, val in F.items():
+        arr = np.asarray(val)
+        if arr.ndim == 2:
+            out[key] = arr[::stride, ::stride]
+        else:
+            out[key] = arr
+    return out
+
+
 def write_structured_vtp(
     X: np.ndarray,
     Y: np.ndarray,
@@ -129,8 +145,12 @@ def write_structured_vtp(
 
         grid.point_data[key] = arr.ravel(order="F")
 
+    # VTP is a PolyData format.  PyVista StructuredGrid must be converted
+    # to a surface PolyData before saving as .vtp.
+    mesh = grid.extract_surface()
+
     path.parent.mkdir(parents=True, exist_ok=True)
-    grid.save(str(path))
+    mesh.save(str(path))
 
 
 def prepare_fields(S: Dict[str, Any], sea_level: float) -> Dict[str, np.ndarray]:
@@ -195,10 +215,23 @@ def export_single_frame(
     water_m: float,
     landslide_m: float,
     title: str,
+    stride: int,
+    water_stride: Optional[int],
+    landslide_stride: Optional[int],
 ) -> None:
     cube = load_cube(source, case_dir, manta_src, prefer_gid)
     S = cube.get_slice(int(frame_index))
-    F = prepare_fields(S, sea_level)
+    F_full = prepare_fields(S, sea_level)
+
+    water_stride = int(stride if water_stride is None else water_stride)
+    landslide_stride = int(stride if landslide_stride is None else landslide_stride)
+    water_stride = max(1, water_stride)
+    landslide_stride = max(1, landslide_stride)
+
+    # Terrain and water use the broader regional stride.
+    # Landslide uses its own finer stride because the slide footprint is local.
+    F = apply_stride(F_full, water_stride)
+    F_slide = apply_stride(F_full, landslide_stride)
 
     out = Path(outdir).expanduser().resolve()
     out.mkdir(parents=True, exist_ok=True)
@@ -238,15 +271,22 @@ def export_single_frame(
         out / "water" / "frame_0000.vtp",
     )
 
-    slide_candidate = np.isfinite(hm) & np.isfinite(m) & (hm > 1e-6)
-    Z_slide = np.where(slide_candidate, b + hm, np.nan)
-    slide_hm = np.where(slide_candidate, hm, np.nan)
-    slide_m = np.where(slide_candidate, m, np.nan)
-    slide_db = np.where(slide_candidate, db, np.nan)
+    Xs = F_slide["X"]
+    Ys = F_slide["Y"]
+    bs = F_slide["b"]
+    hms = F_slide["hm"]
+    ms = F_slide["m"]
+    dbs = F_slide["db"]
+
+    slide_candidate = np.isfinite(hms) & np.isfinite(ms) & (hms > 1e-6)
+    Z_slide = np.where(slide_candidate, bs + hms, np.nan)
+    slide_hm = np.where(slide_candidate, hms, np.nan)
+    slide_m = np.where(slide_candidate, ms, np.nan)
+    slide_db = np.where(slide_candidate, dbs, np.nan)
 
     write_structured_vtp(
-        X,
-        Y,
+        Xs,
+        Ys,
         Z_slide,
         {
             "hm": slide_hm,
@@ -360,6 +400,11 @@ def export_single_frame(
         },
         "processing": {
             "sea_level": float(sea_level),
+            "stride": {
+                "terrain": int(water_stride),
+                "water": int(water_stride),
+                "landslide": int(landslide_stride)
+            },
             "water_surface": "Colored by wave amplitude and filtered by water-like solid-fraction cutoff.",
             "landslide_surface": "Colored by hm, m, or Δb and filtered by landslide solid-fraction cutoff."
         }
@@ -387,6 +432,9 @@ def main() -> None:
     parser.add_argument("--water-m", type=float, default=0.001)
     parser.add_argument("--landslide-m", type=float, default=0.30)
     parser.add_argument("--title", default="Aqaba landslide-tsunami simulation")
+    parser.add_argument("--stride", type=int, default=20, help="Fallback row/column downsampling stride.")
+    parser.add_argument("--water-stride", type=int, default=None, help="Row/column stride for terrain and water layers.")
+    parser.add_argument("--landslide-stride", type=int, default=None, help="Row/column stride for landslide layer.")
     args = parser.parse_args()
 
     export_single_frame(
@@ -400,6 +448,9 @@ def main() -> None:
         water_m=args.water_m,
         landslide_m=args.landslide_m,
         title=args.title,
+        stride=args.stride,
+        water_stride=args.water_stride,
+        landslide_stride=args.landslide_stride,
     )
 
 
