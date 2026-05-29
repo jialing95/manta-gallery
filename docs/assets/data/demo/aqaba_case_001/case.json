@@ -202,7 +202,7 @@
           -67.6097183227539,
           89.61026763916016
         ],
-        "range_mode": "fixed_symmetric_global_one_sixth_in_viewer"
+        "range_mode": "fixed_symmetric_global_one_tenth_in_viewer"
       }
     },
     "landslide": {

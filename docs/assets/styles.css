@@ -257,3 +257,34 @@
   }
 }
 
+/* MANTA T7 enlarged hero viewer override */
+.manta-case-hero {
+  width: 98vw;
+  max-width: 2800px;
+  margin: 1.0rem 0 2.8rem 50%;
+  transform: translateX(-50%);
+}
+
+#aqaba-viewer.manta-viewer {
+  width: 100%;
+  height: clamp(980px, 96vh, 1450px);
+  min-height: 900px;
+  border-radius: 14px;
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.28);
+}
+
+@media (max-width: 1200px) {
+  .manta-case-hero { width: 98vw; }
+  #aqaba-viewer.manta-viewer {
+    height: 90vh;
+    min-height: 740px;
+  }
+}
+
+@media (max-width: 760px) {
+  .manta-case-hero { width: calc(100vw - 1rem); }
+  #aqaba-viewer.manta-viewer {
+    height: 82vh;
+    min-height: 560px;
+  }
+}
