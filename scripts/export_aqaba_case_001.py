@@ -18,7 +18,8 @@ Output:
     └── landslide/frame_0000.vtp
 
 Design:
-    - DEM / water are exported over the full domain with coarse stride.
+    - DEM is exported once as a static high-resolution VTP and reused by all frames.
+    - Water is exported as time-dependent VTP frames with a coarser stride.
     - Landslide is exported with finer stride and cropped to a global ROI.
     - The landslide ROI is the union of landslide footprints over multiple frames,
       not only the target display frame.
@@ -54,7 +55,10 @@ WATER_M_DEFAULT = 0.30
 LANDSLIDE_M_DEFAULT = 0.0
 
 # Export resolution
-TERRAIN_WATER_STRIDE = 20
+# Terrain is a static background VTP: export it finer and reuse it across all
+# future time frames instead of writing one DEM per frame.
+TERRAIN_STRIDE = 5
+WATER_STRIDE = 20
 LANDSLIDE_STRIDE = 5
 
 # Global landslide ROI settings.
@@ -466,24 +470,31 @@ def export_case() -> None:
 
     OUTDIR.mkdir(parents=True, exist_ok=True)
 
-    # Terrain and water: full domain, coarser stride
-    F_tw = apply_stride(F_full, TERRAIN_WATER_STRIDE)
+    # Terrain: static full-domain high-resolution background.
+    # This file is written once and reused by all future time frames.
+    F_terrain = apply_stride(F_full, TERRAIN_STRIDE)
 
-    X = F_tw["X"]
-    Y = F_tw["Y"]
-    b0 = F_tw["b0"]
-    h = F_tw["h"]
-    eta = F_tw["eta"]
-    m = F_tw["m"]
-    wave_amplitude = F_tw["wave_amplitude"]
+    Xt = F_terrain["X"]
+    Yt = F_terrain["Y"]
+    b0t = F_terrain["b0"]
 
     write_surface_vtp(
-        X,
-        Y,
-        b0,
-        {"elevation": b0},
+        Xt,
+        Yt,
+        b0t,
+        {"elevation": b0t},
         OUTDIR / "terrain.vtp",
     )
+
+    # Water: full-domain time-dependent frame, kept coarser than terrain.
+    F_water = apply_stride(F_full, WATER_STRIDE)
+
+    X = F_water["X"]
+    Y = F_water["Y"]
+    h = F_water["h"]
+    eta = F_water["eta"]
+    m = F_water["m"]
+    wave_amplitude = F_water["wave_amplitude"]
 
     wet = np.isfinite(h) & (h > 5.0e-4) & np.isfinite(eta)
 
@@ -565,6 +576,7 @@ def export_case() -> None:
             "terrain": {
                 "file": "terrain.vtp",
                 "visible": True,
+                "time_varying": False,
                 "style": {
                     "mode": "sea_split",
                     "below_sea_level": {
@@ -581,6 +593,7 @@ def export_case() -> None:
             "water": {
                 "file_pattern": "water/frame_{frame}.vtp",
                 "visible": True,
+                "time_varying": True,
                 "display_scalar": "wave_amplitude",
                 "filter_scalar": "m",
                 "filter_rule": "m <= water_m",
@@ -598,6 +611,7 @@ def export_case() -> None:
             "landslide": {
                 "file_pattern": "landslide/frame_{frame}.vtp",
                 "visible": True,
+                "time_varying": True,
                 "filter_scalar": "m",
                 "filter_rule": "m >= landslide_m",
                 "default_m": float(LANDSLIDE_M_DEFAULT),
@@ -642,8 +656,8 @@ def export_case() -> None:
         "processing": {
             "sea_level": float(SEA_LEVEL),
             "stride": {
-                "terrain": int(TERRAIN_WATER_STRIDE),
-                "water": int(TERRAIN_WATER_STRIDE),
+                "terrain": int(TERRAIN_STRIDE),
+                "water": int(WATER_STRIDE),
                 "landslide": int(LANDSLIDE_STRIDE),
             },
             "landslide_roi": {
@@ -654,6 +668,7 @@ def export_case() -> None:
                 "roi_rc_exclusive": [int(v) for v in global_landslide_roi],
                 "scan": global_landslide_roi_meta,
             },
+            "terrain_surface": "Static high-resolution DEM VTP reused by all time-dependent frames.",
             "water_surface": "Colored by wave amplitude and filtered by water-like solid-fraction cutoff.",
             "landslide_surface": "Cropped to global landslide ROI, colored by hm, m, or Δb, and filtered by landslide solid-fraction cutoff.",
         },
@@ -711,7 +726,8 @@ def print_export_summary(
     print("")
     print("Settings")
     print(f"  frame_index:            {FRAME_INDEX}")
-    print(f"  terrain/water stride:   {TERRAIN_WATER_STRIDE}")
+    print(f"  terrain stride:         {TERRAIN_STRIDE}")
+    print(f"  water stride:           {WATER_STRIDE}")
     print(f"  landslide stride:       {LANDSLIDE_STRIDE}")
     print(f"  landslide roi pad:      {LANDSLIDE_ROI_PAD}")
     print(f"  landslide roi rc:       {roi}")

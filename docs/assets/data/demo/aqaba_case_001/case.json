@@ -20,6 +20,7 @@
     "terrain": {
       "file": "terrain.vtp",
       "visible": true,
+      "time_varying": false,
       "style": {
         "mode": "sea_split",
         "below_sea_level": {
@@ -36,6 +37,7 @@
     "water": {
       "file_pattern": "water/frame_{frame}.vtp",
       "visible": true,
+      "time_varying": true,
       "display_scalar": "wave_amplitude",
       "filter_scalar": "m",
       "filter_rule": "m <= water_m",
@@ -59,6 +61,7 @@
     "landslide": {
       "file_pattern": "landslide/frame_{frame}.vtp",
       "visible": true,
+      "time_varying": true,
       "filter_scalar": "m",
       "filter_rule": "m >= landslide_m",
       "default_m": 0.0,
@@ -115,7 +118,7 @@
   "processing": {
     "sea_level": 0.0,
     "stride": {
-      "terrain": 20,
+      "terrain": 5,
       "water": 20,
       "landslide": 5
     },
@@ -288,6 +291,7 @@
         ]
       }
     },
+    "terrain_surface": "Static high-resolution DEM VTP reused by all time-dependent frames.",
     "water_surface": "Colored by wave amplitude and filtered by water-like solid-fraction cutoff.",
     "landslide_surface": "Cropped to global landslide ROI, colored by hm, m, or Δb, and filtered by landslide solid-fraction cutoff."
   }
