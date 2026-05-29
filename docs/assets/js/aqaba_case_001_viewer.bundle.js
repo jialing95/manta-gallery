@@ -914,8 +914,7 @@ void main()
     .manta-viewer {
       position: relative;
       width: 100%;
-      height: 620px;
-      min-height: 420px;
+      height: clamp(780px, 86vh, 1120px); min-height: 720px;
       overflow: hidden;
       border: 1px solid #d0d7de;
       border-radius: 8px;

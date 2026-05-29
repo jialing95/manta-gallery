@@ -1,39 +1,54 @@
 ---
 title: "Aqaba Case 001"
+page-layout: full
+toc: false
 ---
 
+::: {.manta-case-intro}
 ## Overview
 
 This case presents a single-frame gallery-ready export from a D-Claw landslide-tsunami simulation in the Gulf of Aqaba.
 
-The terrain is displayed using a sea-split topo-bathymetric style. The water surface is colored by wave amplitude. The landslide material layer carries `hm`, `m`, and `Δb` fields for interactive switching in the browser viewer.
+The terrain is displayed as a static high-resolution topographic and bathymetric surface. The water surface is colored by wave amplitude using the **Tsunami** theme, while the landslide material layer carries `hm`, `m`, and `Δb` fields for interactive scalar switching in the browser viewer.
+:::
 
+::: {.manta-case-hero}
 ```{=html}
 <div id="aqaba-viewer" class="manta-viewer">
-  <div class="manta-viewer-status">Loading MANTA Gallery viewer...</div>
+  <div class="manta-viewer-status">
+    Loading MANTA Gallery viewer...
+  </div>
 </div>
-
 <script type="module" src="../assets/js/aqaba_case_001_viewer.bundle.js"></script>
+```
+:::
 
-## Current export settings
+<details class="manta-foldout">
+<summary>Current export settings</summary>
 
 | Item | Value |
-|---|---:|
+|---|---|
 | Source | FORT-native |
 | Frame index | `20` |
-| Terrain / water stride | `20` |
+| Terrain stride | `5` |
+| Water stride | `20` |
 | Landslide stride | `5` |
-| Landslide ROI | global union over all `72` frames |
+| Terrain reuse | Single static `terrain.vtp` reused across frames; DEM is not regenerated or updated online during playback. |
+| Landslide ROI | Global union over all `72` frames |
 | Landslide ROI pad | `24` cells |
 | Water threshold | `m <= 0.3` |
 | Landslide threshold | `m >= 0.0` |
-| Package size | ~`1.8 MB` |
 
-## Layer styles
+</details>
+
+<details class="manta-foldout">
+<summary>Layer styles</summary>
 
 | Layer | Style |
 |---|---|
-| DEM bathymetry | `cmocean.deep` |
-| DEM topography | `cmcrameri.grayC + relief` |
-| Water surface | `dclaw.tsunami` |
-| Landslide | `magma` |
+| DEM bathymetry | Sea-split target: `cmocean.deep`; currently kept as a static gray relief surface. |
+| DEM topography | Sea-split target: `cmcrameri.grayC + relief / hillshade`; terrain is exported at higher resolution than water frames. |
+| Water surface | Scalar = `wave_amplitude`; theme = `dclaw.tsunami` / **Tsunami**; robust symmetric display range. |
+| Landslide | Scalar selector = `hm / m / Δb`; colormap = `magma`. |
+
+</details>
