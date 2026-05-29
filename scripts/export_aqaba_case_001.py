@@ -95,7 +95,7 @@ LANDSLIDE_ROI_PAD = 24
 # Detect landslide ROI by hm. Keep this very small to include weak/edge material.
 LANDSLIDE_ROI_HM_EPS = 1.0e-6
 
-TITLE = "Aqaba landslide-tsunami simulation"
+TITLE = "Aqaba LSB C10"
 
 
 # =============================================================================
@@ -744,7 +744,7 @@ def export_case() -> None:
     case = {
         "id": OUTDIR.name,
         "title": TITLE,
-        "description": "Time-series gallery-ready export of wave amplitude and landslide material fields.",
+        "description": "Aqaba LSB C10 time-series D-Claw export with water height and landslide material fields.",
         "source": {
             "kind": SOURCE,
             "case_dir": str(CASE_DIR),
@@ -786,7 +786,7 @@ def export_case() -> None:
                 "colorbar": {
                     "side": "right",
                     "range": water_amp_range.as_list(),
-                    "range_mode": "fixed_symmetric_global_one_third_in_viewer",
+                    "range_mode": "fixed_symmetric_global_one_sixth_in_viewer",
                 },
             },
             "landslide": {

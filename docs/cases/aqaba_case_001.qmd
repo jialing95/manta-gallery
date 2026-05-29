@@ -1,5 +1,5 @@
 ---
-title: "Aqaba Case 001"
+title: "Aqaba LSB C10"
 page-layout: full
 toc: false
 ---
@@ -7,9 +7,7 @@ toc: false
 ::: {.manta-case-intro}
 ## Overview
 
-This case presents a time-series gallery-ready export from a D-Claw landslide-tsunami simulation in the Gulf of Aqaba.
-
-The terrain is displayed as a static high-resolution topographic and bathymetric surface. The water surface is colored by wave amplitude using the **Tsunami** theme, while the landslide material layer carries `hm`, `m`, and `Δb` fields for interactive scalar switching in the browser viewer.
+Aqaba LSB C10 is an interactive 3D D-Claw landslide-tsunami case for the Gulf of Aqaba. `LSB` denotes Landslide B, and `C10` denotes a contractive landslide mixture with permeability coefficient $10^{-10}$. The viewer combines a static high-resolution topo-bathymetric surface with time-dependent water height and landslide fields for browser-side exploration.
 :::
 
 ::: {.manta-case-hero}
@@ -49,7 +47,7 @@ The terrain is displayed as a static high-resolution topographic and bathymetric
 |---|---|
 | DEM bathymetry | Sea-split target: `cmocean.deep`; currently kept as a static gray relief surface. |
 | DEM topography | Sea-split target: `cmcrameri.grayC + relief / hillshade`; terrain is exported at higher resolution than water frames. |
-| Water surface | Scalar = `wave_amplitude`; theme = `dclaw.tsunami` / **Tsunami**; robust symmetric display range. |
+| Water surface | Scalar = `wave_amplitude`; colorbar shows the full exported statistics range, while colors use a one-sixth symmetric display range for vivid playback. |
 | Landslide | Scalar selector = `hm / m / Δb`; colormap = `magma`. |
 
 </details>

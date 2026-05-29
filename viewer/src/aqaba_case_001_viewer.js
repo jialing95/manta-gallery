@@ -448,13 +448,18 @@ function symmetricRangeFromRange(range) {
   return [-limit, limit];
 }
 
-function getWaterDisplayRange() {
+function getWaterStatisticsRange() {
   const manifestRange = state.caseInfo?.layers?.water?.colorbar?.range;
-  const fullRange = symmetricRangeFromRange(manifestRange);
-  if (!fullRange) return null;
+  return finitePairRange(manifestRange);
+}
 
-  const fullLimit = Math.max(Math.abs(fullRange[0]), Math.abs(fullRange[1]), 1e-12);
+function getWaterDisplayRange() {
+  const statsRange = getWaterStatisticsRange();
+  if (!statsRange) return null;
+
+  const fullLimit = Math.max(Math.abs(statsRange[0]), Math.abs(statsRange[1]), 1e-12);
   const displayLimit = Math.max(fullLimit * WATER_DISPLAY_RANGE_FRACTION, 1e-12);
+
   return [-displayLimit, displayLimit];
 }
 
@@ -526,7 +531,7 @@ const MAGMA_COLOR_STOPS = [
 ];
 
 const WATER_COLOR_STOPS = TSUNAMI_COLOR_STOPS;
-const WATER_DISPLAY_RANGE_FRACTION = 1.0 / 3.0;
+const WATER_DISPLAY_RANGE_FRACTION = 1.0 / 6.0;
 const LANDSLIDE_COLOR_STOPS = {
   hm: MAGMA_COLOR_STOPS,
   m: MAGMA_COLOR_STOPS,
@@ -733,6 +738,8 @@ function updateColorbar({ idPrefix, title, scalarInfo, colorStops, showZeroTick 
 }
 
 function updateWaterColorbar() {
+  const statsRange = getWaterStatisticsRange();
+
   updateColorbar({
     idPrefix: 'water',
     title: 'Wave height (m)',
@@ -740,6 +747,13 @@ function updateWaterColorbar() {
     colorStops: WATER_COLOR_STOPS,
     showZeroTick: true,
   });
+
+  if (statsRange) {
+    const fullText = `full ${formatRange(statsRange)}`;
+    const rangeEl = document.getElementById('water-colorbar-range');
+    if (rangeEl) rangeEl.textContent = fullText;
+    setLegendReadout('water-scalar-readout', `wave_amplitude ${fullText}`);
+  }
 }
 
 function updateLandslideColorbar(scalarName = 'hm') {
@@ -1107,7 +1121,7 @@ async function requestFrame(frameIndex, container) {
 
     setStatus(
       container,
-      `Loaded Aqaba Case 001 (${getFrameLabel(state.caseInfo, k)}). Drag to rotate, scroll to zoom.`
+      `Loaded Aqaba Case LSB C10 (${getFrameLabel(state.caseInfo, k)}). Drag to rotate, scroll to zoom.`
     );
   } catch (error) {
     console.error('[MANTA Gallery] failed to load frame:', error);
@@ -1267,7 +1281,7 @@ async function main() {
 
     setStatus(
       container,
-      `Loaded Aqaba Case 001 (${getFrameLabel(caseInfo, frameIndex)}). Drag to rotate, scroll to zoom.`
+      `Loaded Aqaba Case LSB C10 (${getFrameLabel(caseInfo, frameIndex)}). Drag to rotate, scroll to zoom.`
     );
   } catch (error) {
     console.error('[MANTA Gallery] viewer failed:', error);

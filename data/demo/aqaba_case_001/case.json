@@ -1,7 +1,7 @@
 {
   "id": "aqaba_case_001",
-  "title": "Aqaba landslide-tsunami simulation",
-  "description": "Time-series gallery-ready export of wave amplitude and landslide material fields.",
+  "title": "Aqaba LSB C10",
+  "description": "Aqaba LSB C10 time-series D-Claw export with water height and landslide material fields.",
   "source": {
     "kind": "fort",
     "case_dir": "/home/daij/Desktop/compile_all/AQA_016_K1_C10_angm35_mixed",
@@ -202,7 +202,7 @@
           -67.6097183227539,
           89.61026763916016
         ],
-        "range_mode": "fixed_symmetric_global_one_third_in_viewer"
+        "range_mode": "fixed_symmetric_global_one_sixth_in_viewer"
       }
     },
     "landslide": {
