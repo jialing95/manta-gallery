@@ -136,7 +136,8 @@ function injectCss() {
       color: #24292f;
       background: rgba(255, 255, 255, 0.92);
       box-shadow: 0 1px 5px rgba(0, 0, 0, 0.2);
-      min-width: 190px;
+      width: 310px;
+      max-width: calc(100% - 24px);
     }
 
     .manta-viewer-legend-title {
@@ -164,6 +165,70 @@ function injectCss() {
       color: #57606a;
       font-size: 11px;
       margin-left: auto;
+    }
+
+    .manta-viewer-colorbars {
+      margin-top: 9px;
+      padding-top: 8px;
+      border-top: 1px solid rgba(31, 35, 40, 0.14);
+    }
+
+    .manta-colorbar {
+      margin-top: 8px;
+    }
+
+    .manta-colorbar:first-child {
+      margin-top: 0;
+    }
+
+    .manta-colorbar-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+
+    .manta-colorbar-title {
+      font-weight: 700;
+      color: #24292f;
+    }
+
+    .manta-colorbar-range {
+      color: #57606a;
+      font-size: 11px;
+      white-space: nowrap;
+    }
+
+    .manta-colorbar-strip {
+      width: 100%;
+      height: 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(31, 35, 40, 0.22);
+      box-sizing: border-box;
+      overflow: hidden;
+    }
+
+    .manta-colorbar-ticks {
+      display: flex;
+      justify-content: space-between;
+      gap: 6px;
+      margin-top: 3px;
+      color: #57606a;
+      font-size: 10px;
+      line-height: 1.2;
+    }
+
+    .manta-colorbar-ticks span:nth-child(2) {
+      text-align: center;
+    }
+
+    .manta-colorbar-ticks span:last-child {
+      text-align: right;
+    }
+
+    .manta-colorbar-hidden {
+      display: none;
     }
 
     .manta-swatch-terrain { background: #9b9b9b; }
@@ -205,6 +270,34 @@ function setupDom(container) {
         <span class="manta-swatch manta-swatch-landslide"></span>
         Landslide
         <span id="landslide-scalar-readout" class="manta-viewer-legend-value">solid</span>
+      </div>
+
+      <div class="manta-viewer-colorbars">
+        <div id="water-colorbar" class="manta-colorbar manta-colorbar-hidden">
+          <div class="manta-colorbar-header">
+            <span id="water-colorbar-title" class="manta-colorbar-title">Tsunami</span>
+            <span id="water-colorbar-range" class="manta-colorbar-range"></span>
+          </div>
+          <div id="water-colorbar-strip" class="manta-colorbar-strip"></div>
+          <div class="manta-colorbar-ticks">
+            <span id="water-colorbar-min"></span>
+            <span id="water-colorbar-mid"></span>
+            <span id="water-colorbar-max"></span>
+          </div>
+        </div>
+
+        <div id="landslide-colorbar" class="manta-colorbar manta-colorbar-hidden">
+          <div class="manta-colorbar-header">
+            <span id="landslide-colorbar-title" class="manta-colorbar-title">Landslide</span>
+            <span id="landslide-colorbar-range" class="manta-colorbar-range"></span>
+          </div>
+          <div id="landslide-colorbar-strip" class="manta-colorbar-strip"></div>
+          <div class="manta-colorbar-ticks">
+            <span id="landslide-colorbar-min"></span>
+            <span id="landslide-colorbar-mid"></span>
+            <span id="landslide-colorbar-max"></span>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -303,28 +396,37 @@ function setupScene(host) {
 }
 
 
-const WATER_COLOR_STOPS = [
-  [0.0, 0.02, 0.12, 0.40],
-  [0.5, 0.86, 0.94, 1.00],
-  [1.0, 0.03, 0.42, 0.95],
+const TSUNAMI_COLOR_STOPS = [
+  [0.00, 0.03, 0.05, 0.22],
+  [0.18, 0.06, 0.22, 0.55],
+  [0.36, 0.10, 0.44, 0.82],
+  [0.50, 0.90, 0.96, 0.98],
+  [0.64, 0.99, 0.80, 0.36],
+  [0.82, 0.90, 0.24, 0.12],
+  [1.00, 0.45, 0.02, 0.04],
 ];
 
+const MAGMA_COLOR_STOPS = [
+  [0.00, 0.00, 0.00, 0.02],
+  [0.18, 0.11, 0.07, 0.33],
+  [0.38, 0.45, 0.12, 0.51],
+  [0.62, 0.82, 0.28, 0.42],
+  [0.82, 0.99, 0.62, 0.34],
+  [1.00, 0.99, 0.99, 0.65],
+];
+
+const WATER_COLOR_STOPS = TSUNAMI_COLOR_STOPS;
+
 const LANDSLIDE_COLOR_STOPS = {
-  hm: [
-    [0.0, 0.25, 0.05, 0.02],
-    [0.5, 0.90, 0.32, 0.12],
-    [1.0, 1.00, 0.86, 0.30],
-  ],
-  m: [
-    [0.0, 1.00, 0.93, 0.55],
-    [0.5, 0.93, 0.46, 0.16],
-    [1.0, 0.48, 0.04, 0.02],
-  ],
-  db: [
-    [0.0, 0.14, 0.10, 0.36],
-    [0.5, 0.92, 0.92, 0.92],
-    [1.0, 0.52, 0.08, 0.10],
-  ],
+  hm: MAGMA_COLOR_STOPS,
+  m: MAGMA_COLOR_STOPS,
+  db: MAGMA_COLOR_STOPS,
+};
+
+const LANDSLIDE_SCALAR_LABELS = {
+  hm: 'hm',
+  m: 'm',
+  db: 'Δb',
 };
 
 function getArrayByName(attributes, name) {
@@ -469,6 +571,68 @@ function setLegendReadout(id, text) {
   if (el) el.textContent = text;
 }
 
+function stopsToCssGradient(stops) {
+  return `linear-gradient(to right, ${stops
+    .map(([position, red, green, blue]) => {
+      const r = Math.round(red * 255);
+      const g = Math.round(green * 255);
+      const b = Math.round(blue * 255);
+      const pct = Math.round(position * 1000) / 10;
+      return `rgb(${r}, ${g}, ${b}) ${pct}%`;
+    })
+    .join(', ')})`;
+}
+
+function updateColorbar({ idPrefix, title, scalarInfo, colorStops, showZeroTick = false }) {
+  const container = document.getElementById(`${idPrefix}-colorbar`);
+  if (!container) return;
+
+  if (!scalarInfo?.range) {
+    container.classList.add('manta-colorbar-hidden');
+    return;
+  }
+
+  const [vmin, vmax] = scalarInfo.range;
+  const midValue = showZeroTick && vmin < 0 && vmax > 0 ? 0.0 : 0.5 * (vmin + vmax);
+
+  container.classList.remove('manta-colorbar-hidden');
+  const titleEl = document.getElementById(`${idPrefix}-colorbar-title`);
+  const rangeEl = document.getElementById(`${idPrefix}-colorbar-range`);
+  const stripEl = document.getElementById(`${idPrefix}-colorbar-strip`);
+  const minEl = document.getElementById(`${idPrefix}-colorbar-min`);
+  const midEl = document.getElementById(`${idPrefix}-colorbar-mid`);
+  const maxEl = document.getElementById(`${idPrefix}-colorbar-max`);
+
+  if (titleEl) titleEl.textContent = title;
+  if (rangeEl) rangeEl.textContent = formatRange(scalarInfo.range);
+  if (stripEl) stripEl.style.background = stopsToCssGradient(colorStops);
+  if (minEl) minEl.textContent = formatScalar(vmin);
+  if (midEl) midEl.textContent = formatScalar(midValue);
+  if (maxEl) maxEl.textContent = formatScalar(vmax);
+}
+
+function updateWaterColorbar() {
+  updateColorbar({
+    idPrefix: 'water',
+    title: 'Tsunami / wave amplitude',
+    scalarInfo: state.scalarInfo.water,
+    colorStops: WATER_COLOR_STOPS,
+    showZeroTick: true,
+  });
+}
+
+function updateLandslideColorbar(scalarName = 'hm') {
+  const colorStops = LANDSLIDE_COLOR_STOPS[scalarName] ?? MAGMA_COLOR_STOPS;
+  const label = LANDSLIDE_SCALAR_LABELS[scalarName] ?? scalarName;
+  updateColorbar({
+    idPrefix: 'landslide',
+    title: `Landslide / ${label}`,
+    scalarInfo: state.scalarInfo.landslide,
+    colorStops,
+    showZeroTick: scalarName === 'db',
+  });
+}
+
 function applyScalarToActor({
   actor,
   polyData,
@@ -585,6 +749,7 @@ function applyLandslideScalar(scalarName) {
     'landslide-scalar-readout',
     scalarInfo ? `${scalarInfo.name} ${formatRange(scalarInfo.range)}` : 'solid'
   );
+  updateLandslideColorbar(scalarName);
 
   state.renderWindow?.render();
 }
@@ -662,6 +827,9 @@ function addActors(terrain, water, landslide) {
     'landslide-scalar-readout',
     landslideScalarInfo ? `${landslideScalarInfo.name} ${formatRange(landslideScalarInfo.range)}` : 'solid'
   );
+
+  updateWaterColorbar();
+  updateLandslideColorbar('hm');
 }
 
 function resetCamera() {
