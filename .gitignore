@@ -42,3 +42,11 @@ fgmax/
 
 /.quarto/
 **/*.quarto_ipynb
+
+# Node / frontend
+node_modules/
+
+# Quarto build outputs
+docs/_site/
+_site/
+.quarto/
