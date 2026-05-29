@@ -54,7 +54,7 @@
         "side": "right",
         "range": [
           -12.942337036132812,
-          601.0611572265625
+          12.16551399230957
         ]
       }
     },
@@ -292,7 +292,19 @@
       }
     },
     "terrain_surface": "Static high-resolution DEM VTP reused by all time-dependent frames.",
-    "water_surface": "Colored by wave amplitude and filtered by water-like solid-fraction cutoff.",
+    "water_surface": "Colored by wave amplitude; m is exported as a filter scalar for browser-side thresholding, not hard-filtered at export.",
+    "water_export_mask": {
+      "dry_tolerance": 0.0005,
+      "ocean_base_gate": true,
+      "ocean_b0_eps": 0.0,
+      "m_threshold_applied_at_export": false,
+      "amplitude_outlier_guard": {
+        "percentile": 99.0,
+        "factor": 6.0,
+        "min_limit": 10.0,
+        "limit_used": 20.30564580917358
+      }
+    },
     "landslide_surface": "Cropped to global landslide ROI, colored by hm, m, or Δb, and filtered by landslide solid-fraction cutoff."
   }
 }

@@ -61,6 +61,19 @@ TERRAIN_STRIDE = 5
 WATER_STRIDE = 20
 LANDSLIDE_STRIDE = 5
 
+# Water surface export semantics:
+# - Keep m as a scalar for later browser-side thresholding; do NOT hard-filter
+#   water VTP cells by WATER_M_DEFAULT here.
+# - Suppress non-ocean/landslide-top artifacts using a physical water mask and a
+#   robust amplitude outlier guard. This prevents isolated eta spikes from
+#   becoming water-surface geometry.
+WATER_DRY_TOL = 5.0e-4
+WATER_REQUIRE_OCEAN_BASE = True
+WATER_OCEAN_B0_EPS = 0.0
+WATER_AMP_ROBUST_PERCENTILE = 99.0
+WATER_AMP_OUTLIER_FACTOR = 6.0
+WATER_AMP_MIN_LIMIT = 10.0
+
 # Global landslide ROI settings.
 # "all": scan all frames with ROI_FRAME_STEP.
 # "selected": scan ROI_FRAME_INDICES only.
@@ -139,6 +152,35 @@ def nan_range(a: np.ndarray):
     if not np.any(mask):
         return [None, None]
     return [float(np.nanmin(arr)), float(np.nanmax(arr))]
+
+
+def robust_abs_limit(
+    a: np.ndarray,
+    *,
+    percentile: float = WATER_AMP_ROBUST_PERCENTILE,
+    factor: float = WATER_AMP_OUTLIER_FACTOR,
+    min_limit: float = WATER_AMP_MIN_LIMIT,
+) -> Optional[float]:
+    """
+    Return a robust symmetric amplitude limit used only for export masking.
+
+    This is not a colormap range. It is a safety guard against isolated, non-
+    physical eta spikes entering the browser water-surface geometry. The limit
+    scales with the data distribution and has a conservative lower bound.
+    """
+    arr = np.asarray(a, dtype=float)
+    vals = np.abs(arr[np.isfinite(arr)])
+    if vals.size == 0:
+        return None
+
+    q = float(np.nanpercentile(vals, float(percentile)))
+    if not np.isfinite(q):
+        return None
+
+    limit = max(float(min_limit), float(factor) * q)
+    if not np.isfinite(limit) or limit <= 0.0:
+        return None
+    return float(limit)
 
 
 def apply_stride(F: Dict[str, np.ndarray], stride: int) -> Dict[str, np.ndarray]:
@@ -491,16 +533,35 @@ def export_case() -> None:
 
     X = F_water["X"]
     Y = F_water["Y"]
+    b0w = F_water["b0"]
     h = F_water["h"]
     eta = F_water["eta"]
     m = F_water["m"]
     wave_amplitude = F_water["wave_amplitude"]
 
-    wet = np.isfinite(h) & (h > 5.0e-4) & np.isfinite(eta)
+    # Base water mask follows the MANTA/CAEsar convention: wet/dry is defined
+    # by depth and finite eta, not by the default m threshold.
+    wet = np.isfinite(h) & (h > float(WATER_DRY_TOL)) & np.isfinite(eta)
 
-    Z_water = np.where(wet, eta, np.nan)
-    water_amp = np.where(wet, wave_amplitude, np.nan)
-    water_m = np.where(wet, m, np.nan)
+    # Ocean-base gate removes subaerial/landslide-top artifacts from the water
+    # surface while still preserving ocean cells with m > WATER_M_DEFAULT for
+    # future browser-side threshold sliders.
+    if WATER_REQUIRE_OCEAN_BASE:
+        ocean_base = np.isfinite(b0w) & (b0w <= float(SEA_LEVEL) + float(WATER_OCEAN_B0_EPS))
+        water_mask = wet & ocean_base
+    else:
+        water_mask = wet
+
+    # Robust outlier guard: isolated eta/wave_amplitude spikes should not become
+    # browser water-surface geometry. This is deliberately independent of m.
+    amp_limit = robust_abs_limit(wave_amplitude[water_mask])
+    if amp_limit is not None:
+        with np.errstate(invalid="ignore"):
+            water_mask = water_mask & np.isfinite(wave_amplitude) & (np.abs(wave_amplitude) <= amp_limit)
+
+    Z_water = np.where(water_mask, eta, np.nan)
+    water_amp = np.where(water_mask, wave_amplitude, np.nan)
+    water_m = np.where(water_mask, m, np.nan)
 
     write_surface_vtp(
         X,
@@ -669,7 +730,19 @@ def export_case() -> None:
                 "scan": global_landslide_roi_meta,
             },
             "terrain_surface": "Static high-resolution DEM VTP reused by all time-dependent frames.",
-            "water_surface": "Colored by wave amplitude and filtered by water-like solid-fraction cutoff.",
+            "water_surface": "Colored by wave amplitude; m is exported as a filter scalar for browser-side thresholding, not hard-filtered at export.",
+            "water_export_mask": {
+                "dry_tolerance": float(WATER_DRY_TOL),
+                "ocean_base_gate": bool(WATER_REQUIRE_OCEAN_BASE),
+                "ocean_b0_eps": float(WATER_OCEAN_B0_EPS),
+                "m_threshold_applied_at_export": False,
+                "amplitude_outlier_guard": {
+                    "percentile": float(WATER_AMP_ROBUST_PERCENTILE),
+                    "factor": float(WATER_AMP_OUTLIER_FACTOR),
+                    "min_limit": float(WATER_AMP_MIN_LIMIT),
+                    "limit_used": None if amp_limit is None else float(amp_limit),
+                },
+            },
             "landslide_surface": "Cropped to global landslide ROI, colored by hm, m, or Δb, and filtered by landslide solid-fraction cutoff.",
         },
     }
@@ -733,10 +806,18 @@ def print_export_summary(
     print(f"  landslide roi rc:       {roi}")
     print("")
     print("Default display diagnostics")
-    print(f"  water m <= {WATER_M_DEFAULT}: {int(water_keep.sum())} / {water_amp.size}")
+    water_exported = np.isfinite(water_amp)
+    print(f"  water exported cells: {int(water_exported.sum())} / {water_amp.size}")
+    if np.any(water_exported):
+        print(
+            "    exported wave amplitude range: "
+            f"{float(np.nanmin(water_amp[water_exported])):.6g} to "
+            f"{float(np.nanmax(water_amp[water_exported])):.6g}"
+        )
+    print(f"  water m <= {WATER_M_DEFAULT} default view: {int(water_keep.sum())} / {water_amp.size}")
     if np.any(water_keep):
         print(
-            "    wave amplitude range: "
+            "    default-view wave amplitude range: "
             f"{float(np.nanmin(water_amp[water_keep])):.6g} to "
             f"{float(np.nanmax(water_amp[water_keep])):.6g}"
         )
