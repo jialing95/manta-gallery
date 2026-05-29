@@ -307,7 +307,22 @@ function injectCss() {
     .manta-swatch-terrain { background: #9b9b9b; }
     .manta-swatch-water { background: #3c75d9; }
     .manta-swatch-landslide { background: #d65f2e; }
-  `;
+  
+
+    .manta-amr-hud .manta-amr-level-token {
+      display: inline-block;
+      font-weight: 800;
+      letter-spacing: 0.01em;
+      text-shadow: 0 0 2px rgba(255, 255, 255, 0.85), 0 0 4px rgba(0, 0, 0, 0.18);
+    }
+
+    .manta-amr-hud .manta-amr-resolution {
+      color: #24292f;
+      font-weight: 600;
+      opacity: 0.92;
+      margin-left: 2px;
+    }
+`;
   document.head.appendChild(style);
 }
 
@@ -478,21 +493,87 @@ function amrLevelText(levels) {
     .join(' · ');
 }
 
+function amrColorToCss(level) {
+  const rgb = AMR_LEVEL_COLORS[Number(level)] ?? [1.0, 1.0, 1.0];
+  if (typeof rgb === 'string') return rgb;
+  const r = Math.round(Math.max(0, Math.min(1, Number(rgb[0] ?? 1))) * 255);
+  const g = Math.round(Math.max(0, Math.min(1, Number(rgb[1] ?? 1))) * 255);
+  const b = Math.round(Math.max(0, Math.min(1, Number(rgb[2] ?? 1))) * 255);
+  return `rgb(${r}, ${g}, ${b})`;
+}
+
+function escapeAmrHtml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function formatAmrGridSpacing(value) {
+  const v = Number(value);
+  if (!Number.isFinite(v) || v <= 0) return '?';
+  if (v >= 1000) return `${(v / 1000).toFixed(v >= 10000 ? 0 : 1)} km`;
+  if (v >= 10) return `${Math.round(v)} m`;
+  return `${v.toFixed(2)} m`;
+}
+
+function getAmrResolutionForLevel(amrData, level) {
+  const patches = Array.isArray(amrData?.patches) ? amrData.patches : [];
+  let dx = Number.POSITIVE_INFINITY;
+  let dy = Number.POSITIVE_INFINITY;
+
+  for (const patch of patches) {
+    if (Number(patch?.level) !== Number(level)) continue;
+    const pdx = Number(patch?.dx);
+    const pdy = Number(patch?.dy);
+    if (Number.isFinite(pdx) && pdx > 0) dx = Math.min(dx, pdx);
+    if (Number.isFinite(pdy) && pdy > 0) dy = Math.min(dy, pdy);
+  }
+
+  if (!Number.isFinite(dx) || !Number.isFinite(dy)) return '';
+  return `${formatAmrGridSpacing(dx)} × ${formatAmrGridSpacing(dy)}`;
+}
+
+function formatAmrLevelEntry(amrData, level, count) {
+  const color = amrColorToCss(level);
+  const resolution = getAmrResolutionForLevel(amrData, level);
+  const levelText = `L${Number(level)}`;
+  const countText = Number(count);
+  const resolutionText = resolution
+    ? ` <span class="manta-amr-resolution">(${escapeAmrHtml(resolution)})</span>`
+    : '';
+  return `<span class="manta-amr-level-token" style="color: ${color}">${escapeAmrHtml(levelText)}=${escapeAmrHtml(countText)}</span>${resolutionText}`;
+}
+
 function updateAmrHud(amrData) {
   const hud = document.getElementById('amr-hud');
   if (!hud) return;
 
   if (!amrData) {
     hud.classList.add('manta-amr-hud-hidden');
+    hud.textContent = 'AMR diagnostics unavailable';
     return;
   }
 
-  const levelText = amrLevelText(amrData.levels);
-  const grids = Number(amrData.ngrids ?? 0);
-  const t = Number(amrData.time);
-  const timeText = Number.isFinite(t) ? `t=${t.toFixed(2)} s` : getFrameLabel(state.caseInfo, state.currentFrameIndex);
-  hud.textContent = `AMR: grids=${grids}${levelText ? ` · ${levelText}` : ''} · ${timeText}`;
+  const levels = amrData.levels ?? {};
+  const entries = Object.entries(levels)
+    .map(([level, count]) => [Number(level), Number(count)])
+    .filter(([level, count]) => Number.isFinite(level) && Number.isFinite(count) && count > 0)
+    .sort((a, b) => a[0] - b[0]);
+
+  const levelHtml = entries.length > 0
+    ? entries.map(([level, count]) => formatAmrLevelEntry(amrData, level, count)).join(' · ')
+    : 'no AMR levels';
+
+  const ngrids = Number(amrData.ngrids ?? amrData.patches?.length ?? 0);
+  const frameText = Number.isFinite(Number(amrData.browser_index))
+    ? `frame ${Number(amrData.browser_index) + 1}`
+    : 'frame ?';
+
   hud.classList.remove('manta-amr-hud-hidden');
+  hud.innerHTML = `<strong>AMR</strong>: grids=${escapeAmrHtml(ngrids)} · ${levelHtml} · ${escapeAmrHtml(frameText)}`;
 }
 
 function clearAmrOutlineActors() {
@@ -508,14 +589,14 @@ function clearAmrOutlineActors() {
 }
 
 const AMR_LEVEL_COLORS = {
-  1: [1.00, 0.84, 0.31],
-  2: [0.31, 0.76, 0.97],
-  3: [0.81, 0.58, 0.85],
-  4: [0.65, 0.84, 0.65],
-  5: [1.00, 0.54, 0.40],
-  6: [0.56, 0.79, 0.98],
-  7: [0.96, 0.56, 0.70],
-  8: [0.69, 0.75, 0.77],
+  1: [1.00, 0.82, 0.05],  // vivid amber
+  2: [0.00, 0.76, 1.00],  // cyan
+  3: [1.00, 0.12, 0.38],  // magenta-red
+  4: [0.16, 0.95, 0.38],  // green
+  5: [1.00, 0.45, 0.04],  // orange
+  6: [0.62, 0.22, 1.00],  // purple
+  7: [0.00, 0.95, 0.78],  // turquoise
+  8: [1.00, 1.00, 1.00],  // white
 };
 
 function getAmrLevelColor(level) {
@@ -595,7 +676,7 @@ function renderAmrOutlines(amrData) {
 
     const property = actor.getProperty();
     property.setColor(...getAmrLevelColor(level));
-    property.setOpacity(0.92);
+    property.setOpacity(1.0);
     property.setLineWidth?.(1.25);
 
     state.renderer.addActor(actor);
