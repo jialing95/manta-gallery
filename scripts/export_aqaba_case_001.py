@@ -786,7 +786,7 @@ def export_case() -> None:
                 "colorbar": {
                     "side": "right",
                     "range": water_amp_range.as_list(),
-                    "range_mode": "fixed_symmetric_global_one_sixth_in_viewer",
+                    "range_mode": "fixed_symmetric_global_one_tenth_in_viewer",
                 },
             },
             "landslide": {
