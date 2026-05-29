@@ -50,3 +50,6 @@ node_modules/
 docs/_site/
 _site/
 .quarto/
+
+# Local Python environment
+.venv/
