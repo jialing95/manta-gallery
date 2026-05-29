@@ -53,3 +53,6 @@ _site/
 
 # Local Python environment
 .venv/
+
+# Local patch-script backup files
+*.bak_*
