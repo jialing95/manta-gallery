@@ -247,6 +247,19 @@
           ]
         }
       }
+    },
+    "amr": {
+      "file_pattern": "amr/frame_{frame}.json",
+      "visible": false,
+      "time_varying": true,
+      "label": "FORT AMR diagnostics",
+      "mode": "patch_outlines",
+      "description": "Header-only FORT AMR patch outlines exported from fort.q####.",
+      "level_counts_global": {
+        "1": 144,
+        "2": 14861,
+        "3": 32464
+      }
     }
   },
   "ui": {
@@ -258,7 +271,8 @@
     "show_landslide_scalar_selector": true,
     "show_colormap_controls": false,
     "show_dem_style_controls": false,
-    "show_vertical_exaggeration": false
+    "show_vertical_exaggeration": false,
+    "show_amr_overlay": true
   },
   "camera": {
     "preset": "oblique"
@@ -531,6 +545,18 @@
         }
       }
     },
-    "landslide_surface": "Cropped to global landslide ROI, colored by hm, m, or Δb, and filtered by browser-side landslide solid-fraction cutoff."
+    "landslide_surface": "Cropped to global landslide ROI, colored by hm, m, or Δb, and filtered by browser-side landslide solid-fraction cutoff.",
+    "amr": {
+      "enabled": true,
+      "source": "FORT fort.q#### headers",
+      "file_pattern": "amr/frame_{frame}.json",
+      "frame_count": 72,
+      "export_mode": "header_only_sidecar_json",
+      "level_counts_global": {
+        "1": 144,
+        "2": 14861,
+        "3": 32464
+      }
+    }
   }
 }
