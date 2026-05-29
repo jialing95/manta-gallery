@@ -483,68 +483,45 @@ async function readAmrFrameData(frameIndex) {
   return data;
 }
 
-function amrLevelText(levels) {
+function formatAmrResolutionLength(value) {
+  const v = Number(value);
+  if (!Number.isFinite(v)) return '?';
+  const av = Math.abs(v);
+  if (av >= 1000) {
+    const km = v / 1000.0;
+    return `${km.toFixed(Math.abs(km) >= 10 ? 1 : 2)} km`;
+  }
+  if (av >= 10) return `${Math.round(v)} m`;
+  if (av >= 1) return `${v.toFixed(1)} m`;
+  return `${v.toFixed(3)} m`;
+}
+
+function getAmrLevelResolutionText(amrData, level) {
+  const patches = Array.isArray(amrData?.patches) ? amrData.patches : [];
+  const patch = patches.find((candidate) => {
+    return Number(candidate?.level) === Number(level)
+      && Number.isFinite(Number(candidate?.dx))
+      && Number.isFinite(Number(candidate?.dy));
+  });
+  if (!patch) return '';
+  return ` (${formatAmrResolutionLength(patch.dx)} × ${formatAmrResolutionLength(patch.dy)})`;
+}
+
+function amrLevelHtml(amrData) {
+  const levels = amrData?.levels;
   if (!levels || typeof levels !== 'object') return '';
+
   return Object.keys(levels)
     .map((key) => Number(key))
     .filter((key) => Number.isFinite(key) && key > 0)
     .sort((a, b) => a - b)
-    .map((level) => `L${level}=${levels[String(level)] ?? levels[level]}`)
+    .map((level) => {
+      const count = levels[String(level)] ?? levels[level] ?? 0;
+      const color = getAmrLevelCssColor(level);
+      const resolution = getAmrLevelResolutionText(amrData, level);
+      return `<span class="manta-amr-level" style="color: ${color}; font-weight: 850;">L${level}=${count}</span>${resolution}`;
+    })
     .join(' · ');
-}
-
-function amrColorToCss(level) {
-  const rgb = AMR_LEVEL_COLORS[Number(level)] ?? [1.0, 1.0, 1.0];
-  if (typeof rgb === 'string') return rgb;
-  const r = Math.round(Math.max(0, Math.min(1, Number(rgb[0] ?? 1))) * 255);
-  const g = Math.round(Math.max(0, Math.min(1, Number(rgb[1] ?? 1))) * 255);
-  const b = Math.round(Math.max(0, Math.min(1, Number(rgb[2] ?? 1))) * 255);
-  return `rgb(${r}, ${g}, ${b})`;
-}
-
-function escapeAmrHtml(value) {
-  return String(value)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-function formatAmrGridSpacing(value) {
-  const v = Number(value);
-  if (!Number.isFinite(v) || v <= 0) return '?';
-  if (v >= 1000) return `${(v / 1000).toFixed(v >= 10000 ? 0 : 1)} km`;
-  if (v >= 10) return `${Math.round(v)} m`;
-  return `${v.toFixed(2)} m`;
-}
-
-function getAmrResolutionForLevel(amrData, level) {
-  const patches = Array.isArray(amrData?.patches) ? amrData.patches : [];
-  let dx = Number.POSITIVE_INFINITY;
-  let dy = Number.POSITIVE_INFINITY;
-
-  for (const patch of patches) {
-    if (Number(patch?.level) !== Number(level)) continue;
-    const pdx = Number(patch?.dx);
-    const pdy = Number(patch?.dy);
-    if (Number.isFinite(pdx) && pdx > 0) dx = Math.min(dx, pdx);
-    if (Number.isFinite(pdy) && pdy > 0) dy = Math.min(dy, pdy);
-  }
-
-  if (!Number.isFinite(dx) || !Number.isFinite(dy)) return '';
-  return `${formatAmrGridSpacing(dx)} × ${formatAmrGridSpacing(dy)}`;
-}
-
-function formatAmrLevelEntry(amrData, level, count) {
-  const color = amrColorToCss(level);
-  const resolution = getAmrResolutionForLevel(amrData, level);
-  const levelText = `L${Number(level)}`;
-  const countText = Number(count);
-  const resolutionText = resolution
-    ? ` <span class="manta-amr-resolution">(${escapeAmrHtml(resolution)})</span>`
-    : '';
-  return `<span class="manta-amr-level-token" style="color: ${color}">${escapeAmrHtml(levelText)}=${escapeAmrHtml(countText)}</span>${resolutionText}`;
 }
 
 function updateAmrHud(amrData) {
@@ -553,29 +530,17 @@ function updateAmrHud(amrData) {
 
   if (!amrData) {
     hud.classList.add('manta-amr-hud-hidden');
-    hud.textContent = 'AMR diagnostics unavailable';
     return;
   }
 
-  const levels = amrData.levels ?? {};
-  const entries = Object.entries(levels)
-    .map(([level, count]) => [Number(level), Number(count)])
-    .filter(([level, count]) => Number.isFinite(level) && Number.isFinite(count) && count > 0)
-    .sort((a, b) => a[0] - b[0]);
+  const levelText = amrLevelHtml(amrData);
+  const grids = Number(amrData.ngrids ?? 0);
+  const t = Number(amrData.time);
+  const timeText = Number.isFinite(t) ? `t=${t.toFixed(2)} s` : getFrameLabel(state.caseInfo, state.currentFrameIndex);
 
-  const levelHtml = entries.length > 0
-    ? entries.map(([level, count]) => formatAmrLevelEntry(amrData, level, count)).join(' · ')
-    : 'no AMR levels';
-
-  const ngrids = Number(amrData.ngrids ?? amrData.patches?.length ?? 0);
-  const frameText = Number.isFinite(Number(amrData.browser_index))
-    ? `frame ${Number(amrData.browser_index) + 1}`
-    : 'frame ?';
-
+  hud.innerHTML = `AMR: grids=${grids}${levelText ? ` · ${levelText}` : ''} · ${timeText}`;
   hud.classList.remove('manta-amr-hud-hidden');
-  hud.innerHTML = `<strong>AMR</strong>: grids=${escapeAmrHtml(ngrids)} · ${levelHtml} · ${escapeAmrHtml(frameText)}`;
 }
-
 function clearAmrOutlineActors() {
   if (!state.renderer) return;
   for (const actor of state.amrActors.values()) {
@@ -589,20 +554,27 @@ function clearAmrOutlineActors() {
 }
 
 const AMR_LEVEL_COLORS = {
-  1: [1.00, 0.82, 0.05],  // vivid amber
-  2: [0.00, 0.76, 1.00],  // cyan
-  3: [1.00, 0.12, 0.38],  // magenta-red
-  4: [0.16, 0.95, 0.38],  // green
-  5: [1.00, 0.45, 0.04],  // orange
-  6: [0.62, 0.22, 1.00],  // purple
-  7: [0.00, 0.95, 0.78],  // turquoise
-  8: [1.00, 1.00, 1.00],  // white
+  // L1: dark green; L2: bright blue; higher levels remain high-contrast.
+  1: [0.00, 0.36, 0.18],
+  2: [0.00, 0.62, 1.00],
+  3: [0.84, 0.36, 1.00],
+  4: [0.24, 0.88, 0.40],
+  5: [1.00, 0.44, 0.16],
+  6: [0.15, 0.86, 1.00],
+  7: [1.00, 0.22, 0.55],
+  8: [0.78, 0.84, 0.88],
 };
-
 function getAmrLevelColor(level) {
   return AMR_LEVEL_COLORS[Number(level)] ?? [1.0, 1.0, 1.0];
 }
 
+function getAmrLevelCssColor(level) {
+  const [red, green, blue] = getAmrLevelColor(level);
+  const r = Math.round(Math.max(0, Math.min(1, red)) * 255);
+  const g = Math.round(Math.max(0, Math.min(1, green)) * 255);
+  const b = Math.round(Math.max(0, Math.min(1, blue)) * 255);
+  return `rgb(${r}, ${g}, ${b})`;
+}
 function getAmrOverlayZ() {
   const candidates = [];
   for (const dataset of [state.datasets.water, state.datasets.landslide]) {
@@ -676,8 +648,7 @@ function renderAmrOutlines(amrData) {
 
     const property = actor.getProperty();
     property.setColor(...getAmrLevelColor(level));
-    property.setOpacity(1.0);
-    property.setLineWidth?.(1.25);
+    property.setOpacity(1.0); property.setLineWidth?.(4.25);
 
     state.renderer.addActor(actor);
     state.amrActors.set(level, actor);
