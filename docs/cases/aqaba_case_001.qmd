@@ -8,18 +8,12 @@ This case presents a single-frame gallery-ready export from a D-Claw landslide-t
 
 The terrain is displayed using a sea-split topo-bathymetric style. The water surface is colored by wave amplitude. The landslide material layer carries `hm`, `m`, and `Δb` fields for interactive switching in the browser viewer.
 
-::: {.viewer-placeholder}
+```{=html}
+<div id="aqaba-viewer" class="manta-viewer">
+  <div class="manta-viewer-status">Loading MANTA Gallery viewer...</div>
+</div>
 
-**Interactive 3D viewer coming next**
-
-Current exported demo package:
-
-- `terrain.vtp`
-- `water/frame_0000.vtp`
-- `landslide/frame_0000.vtp`
-- `case.json`
-
-:::
+<script type="module" src="../assets/js/aqaba_case_001_viewer.js"></script>
 
 ## Current export settings
 
