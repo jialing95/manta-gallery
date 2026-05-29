@@ -3,6 +3,9 @@ import vtkActor from '@kitware/vtk.js/Rendering/Core/Actor';
 import vtkMapper from '@kitware/vtk.js/Rendering/Core/Mapper';
 import vtkColorTransferFunction from '@kitware/vtk.js/Rendering/Core/ColorTransferFunction';
 import vtkXMLPolyDataReader from '@kitware/vtk.js/IO/XML/XMLPolyDataReader';
+import vtkPolyData from '@kitware/vtk.js/Common/DataModel/PolyData';
+import vtkPoints from '@kitware/vtk.js/Common/Core/Points';
+import vtkCellArray from '@kitware/vtk.js/Common/Core/CellArray';
 
 import vtkRenderer from '@kitware/vtk.js/Rendering/Core/Renderer';
 import vtkRenderWindow from '@kitware/vtk.js/Rendering/Core/RenderWindow';
@@ -46,6 +49,10 @@ const state = {
   playTimer: null,
   playIntervalMs: 520,
   activeLandslideScalar: 'hm',
+  amrCache: new Map(),
+  amrVisible: false,
+  amrActors: new Map(),
+  amrLoadToken: 0,
 };
 
 function injectCss() {
@@ -99,6 +106,27 @@ function injectCss() {
       color: #b00020;
       font-weight: 700;
       pointer-events: auto;
+    }
+
+    .manta-amr-hud {
+      position: absolute;
+      left: 12px;
+      top: 54px;
+      z-index: 21;
+      max-width: min(760px, calc(100% - 24px));
+      padding: 6px 9px;
+      border-radius: 6px;
+      font-size: 12px;
+      line-height: 1.3;
+      color: #24292f;
+      background: rgba(255, 255, 255, 0.88);
+      box-shadow: 0 1px 5px rgba(0, 0, 0, 0.18);
+      pointer-events: none;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .manta-amr-hud-hidden {
+      display: none;
     }
 
     .manta-viewer-controls {
@@ -300,6 +328,10 @@ function setupDom(container) {
       Loading MANTA Gallery viewer...
     </div>
 
+    <div id="amr-hud" class="manta-amr-hud manta-amr-hud-hidden">
+      AMR diagnostics unavailable
+    </div>
+
     <div class="manta-viewer-legend">
       <div class="manta-viewer-legend-title">Layers</div>
       <div class="manta-viewer-legend-row">
@@ -350,6 +382,7 @@ function setupDom(container) {
       <label><input type="checkbox" id="toggle-terrain" checked> Terrain</label>
       <label><input type="checkbox" id="toggle-water" checked> Water</label>
       <label><input type="checkbox" id="toggle-landslide" checked> Landslide</label>
+      <label><input type="checkbox" id="toggle-amr"> AMR outlines</label>
 
       <label>
         Landslide color:
@@ -396,6 +429,205 @@ function framePathFromPattern(pattern, frameIndex = 0) {
 
 function caseUrl(path) {
   return new URL(path, CASE_BASE_URL);
+}
+
+
+function getAmrFilePattern() {
+  return state.caseInfo?.layers?.amr?.file_pattern ?? null;
+}
+
+function hasAmrLayer() {
+  return Boolean(getAmrFilePattern());
+}
+
+function amrFramePath(frameIndex) {
+  const pattern = getAmrFilePattern();
+  if (!pattern) return null;
+  return framePathFromPattern(pattern, frameIndex);
+}
+
+async function readAmrFrameData(frameIndex) {
+  const k = clampFrameIndex(state.caseInfo, frameIndex);
+  if (!hasAmrLayer()) return null;
+  if (state.amrCache.has(k)) return state.amrCache.get(k);
+
+  const path = amrFramePath(k);
+  if (!path) return null;
+  const data = await fetchJson(caseUrl(path));
+  state.amrCache.set(k, data);
+
+  // Keep a small cache around the current playback window.
+  if (state.amrCache.size > 9) {
+    const keys = Array.from(state.amrCache.keys()).sort((a, b) => Math.abs(b - k) - Math.abs(a - k));
+    while (state.amrCache.size > 9 && keys.length > 0) {
+      const victim = keys.shift();
+      if (victim !== k) state.amrCache.delete(victim);
+    }
+  }
+
+  return data;
+}
+
+function amrLevelText(levels) {
+  if (!levels || typeof levels !== 'object') return '';
+  return Object.keys(levels)
+    .map((key) => Number(key))
+    .filter((key) => Number.isFinite(key) && key > 0)
+    .sort((a, b) => a - b)
+    .map((level) => `L${level}=${levels[String(level)] ?? levels[level]}`)
+    .join(' · ');
+}
+
+function updateAmrHud(amrData) {
+  const hud = document.getElementById('amr-hud');
+  if (!hud) return;
+
+  if (!amrData) {
+    hud.classList.add('manta-amr-hud-hidden');
+    return;
+  }
+
+  const levelText = amrLevelText(amrData.levels);
+  const grids = Number(amrData.ngrids ?? 0);
+  const t = Number(amrData.time);
+  const timeText = Number.isFinite(t) ? `t=${t.toFixed(2)} s` : getFrameLabel(state.caseInfo, state.currentFrameIndex);
+  hud.textContent = `AMR: grids=${grids}${levelText ? ` · ${levelText}` : ''} · ${timeText}`;
+  hud.classList.remove('manta-amr-hud-hidden');
+}
+
+function clearAmrOutlineActors() {
+  if (!state.renderer) return;
+  for (const actor of state.amrActors.values()) {
+    try {
+      state.renderer.removeActor(actor);
+    } catch (error) {
+      // ignore stale actors
+    }
+  }
+  state.amrActors.clear();
+}
+
+const AMR_LEVEL_COLORS = {
+  1: [1.00, 0.84, 0.31],
+  2: [0.31, 0.76, 0.97],
+  3: [0.81, 0.58, 0.85],
+  4: [0.65, 0.84, 0.65],
+  5: [1.00, 0.54, 0.40],
+  6: [0.56, 0.79, 0.98],
+  7: [0.96, 0.56, 0.70],
+  8: [0.69, 0.75, 0.77],
+};
+
+function getAmrLevelColor(level) {
+  return AMR_LEVEL_COLORS[Number(level)] ?? [1.0, 1.0, 1.0];
+}
+
+function getAmrOverlayZ() {
+  const candidates = [];
+  for (const dataset of [state.datasets.water, state.datasets.landslide]) {
+    const bounds = dataset?.getBounds?.();
+    if (Array.isArray(bounds) && bounds.length >= 6 && Number.isFinite(bounds[5])) {
+      candidates.push(Number(bounds[5]));
+    }
+  }
+  if (candidates.length === 0) return 5.0;
+  const z = Math.max(...candidates);
+  return z + 0.25;
+}
+
+function buildAmrPolyDataForLevel(patches, level, zOverlay) {
+  const points = [];
+  const lines = [];
+  let pointIndex = 0;
+
+  for (const patch of patches) {
+    const lv = Number(patch.level);
+    if (lv !== Number(level)) continue;
+
+    const x0 = Number(patch.xlow);
+    const y0 = Number(patch.ylow);
+    const x1 = Number.isFinite(Number(patch.xhi)) ? Number(patch.xhi) : x0 + Number(patch.mx) * Number(patch.dx);
+    const y1 = Number.isFinite(Number(patch.yhi)) ? Number(patch.yhi) : y0 + Number(patch.my) * Number(patch.dy);
+
+    if (![x0, y0, x1, y1].every(Number.isFinite)) continue;
+    if (!(x1 > x0 && y1 > y0)) continue;
+
+    points.push(x0, y0, zOverlay, x1, y0, zOverlay, x1, y1, zOverlay, x0, y1, zOverlay);
+    lines.push(5, pointIndex, pointIndex + 1, pointIndex + 2, pointIndex + 3, pointIndex);
+    pointIndex += 4;
+  }
+
+  if (points.length === 0 || lines.length === 0) return null;
+
+  const vtkPointsObj = vtkPoints.newInstance();
+  vtkPointsObj.setData(Float32Array.from(points), 3);
+
+  const vtkLinesObj = vtkCellArray.newInstance({ values: Uint32Array.from(lines) });
+
+  const polyData = vtkPolyData.newInstance();
+  polyData.setPoints(vtkPointsObj);
+  polyData.setLines(vtkLinesObj);
+
+  return polyData;
+}
+
+function renderAmrOutlines(amrData) {
+  clearAmrOutlineActors();
+  if (!state.amrVisible || !amrData?.patches?.length) {
+    state.renderWindow?.render();
+    return;
+  }
+
+  const levels = Array.from(new Set(amrData.patches.map((patch) => Number(patch.level)).filter(Number.isFinite))).sort((a, b) => a - b);
+  const zOverlay = getAmrOverlayZ();
+
+  for (const level of levels) {
+    const polyData = buildAmrPolyDataForLevel(amrData.patches, level, zOverlay);
+    if (!polyData) continue;
+
+    const mapper = vtkMapper.newInstance();
+    mapper.setInputData(polyData);
+    mapper.setScalarVisibility(false);
+
+    const actor = vtkActor.newInstance();
+    actor.setMapper(mapper);
+    actor.setPickable?.(false);
+
+    const property = actor.getProperty();
+    property.setColor(...getAmrLevelColor(level));
+    property.setOpacity(0.92);
+    property.setLineWidth?.(1.25);
+
+    state.renderer.addActor(actor);
+    state.amrActors.set(level, actor);
+  }
+
+  state.renderer?.resetCameraClippingRange();
+  state.renderWindow?.render();
+}
+
+async function updateAmrForCurrentFrame(container) {
+  if (!hasAmrLayer()) {
+    updateAmrHud(null);
+    clearAmrOutlineActors();
+    const toggle = container?.querySelector?.('#toggle-amr');
+    if (toggle) toggle.disabled = true;
+    return;
+  }
+
+  const token = ++state.amrLoadToken;
+  const frameIndex = state.currentFrameIndex;
+
+  try {
+    const amrData = await readAmrFrameData(frameIndex);
+    if (token !== state.amrLoadToken) return;
+    updateAmrHud(amrData);
+    renderAmrOutlines(amrData);
+  } catch (error) {
+    console.warn('[MANTA Gallery] failed to load AMR diagnostics:', error);
+    updateAmrHud(null);
+    clearAmrOutlineActors();
+  }
 }
 
 function getFrameCount(caseInfo) {
@@ -1118,6 +1350,7 @@ async function requestFrame(frameIndex, container) {
     updateCurrentFrameActors();
     updateFrameReadout();
     prefetchNearbyFrames(k);
+    updateAmrForCurrentFrame(container).catch(() => {});
 
     setStatus(
       container,
@@ -1207,6 +1440,22 @@ function setupControls(container) {
     });
   }
 
+  const amrToggle = container.querySelector('#toggle-amr');
+  if (amrToggle) {
+    amrToggle.disabled = !hasAmrLayer();
+    amrToggle.checked = false;
+    state.amrVisible = false;
+    amrToggle.addEventListener('change', (event) => {
+      state.amrVisible = Boolean(event.target.checked);
+      if (state.amrVisible) {
+        updateAmrForCurrentFrame(container).catch(() => {});
+      } else {
+        clearAmrOutlineActors();
+        state.renderWindow?.render();
+      }
+    });
+  }
+
   container.querySelector('#reset-camera')?.addEventListener('click', () => {
     resetCamera();
   });
@@ -1278,6 +1527,7 @@ async function main() {
     const { caseInfo, terrain, water, landslide, frameIndex } = await loadCaseAndData(container);
     addActors(terrain, water, landslide);
     setupControls(container);
+    await updateAmrForCurrentFrame(container);
 
     setStatus(
       container,
