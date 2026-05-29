@@ -346,6 +346,25 @@ function caseUrl(path) {
   return new URL(path, CASE_BASE_URL);
 }
 
+function getDefaultFrameIndex(caseInfo) {
+  const values = caseInfo?.time?.values;
+  const n = Array.isArray(values) && values.length > 0 ? values.length : 1;
+
+  let index = Number(caseInfo?.time?.default_index);
+  if (!Number.isFinite(index)) index = 0;
+
+  index = Math.round(index);
+  return Math.min(Math.max(index, 0), n - 1);
+}
+
+function getFrameTime(caseInfo, frameIndex) {
+  const values = caseInfo?.time?.values;
+  if (!Array.isArray(values)) return null;
+
+  const t = Number(values[frameIndex]);
+  return Number.isFinite(t) ? t : null;
+}
+
 async function readVtp(url) {
   const reader = vtkXMLPolyDataReader.newInstance();
   const buffer = await fetchArrayBuffer(url);
@@ -759,9 +778,12 @@ async function loadCaseAndData(container) {
   const caseInfo = await fetchJson(CASE_JSON_URL);
   state.caseInfo = caseInfo;
 
+  const frameIndex = getDefaultFrameIndex(caseInfo);
+
   const terrainPath = caseInfo.layers.terrain.file;
-  const waterPath = framePathFromPattern(caseInfo.layers.water.file_pattern, 0);
-  const landslidePath = framePathFromPattern(caseInfo.layers.landslide.file_pattern, 0);
+  const defaultFrameIndex = getDefaultFrameIndex(caseInfo);
+  const waterPath = framePathFromPattern(caseInfo.layers.water.file_pattern, defaultFrameIndex);
+  const landslidePath = framePathFromPattern(caseInfo.layers.landslide.file_pattern, defaultFrameIndex);
 
   const terrainUrl = caseUrl(terrainPath);
   const waterUrl = caseUrl(waterPath);
@@ -784,7 +806,7 @@ async function loadCaseAndData(container) {
   state.datasets.water = water;
   state.datasets.landslide = landslide;
 
-  return { caseInfo, terrain, water, landslide };
+  return { caseInfo, terrain, water, landslide, frameIndex };
 }
 
 function addActors(terrain, water, landslide) {
@@ -902,12 +924,16 @@ async function main() {
   try {
     setupScene(host);
 
-    const { caseInfo, terrain, water, landslide } = await loadCaseAndData(container);
+    const { caseInfo, terrain, water, landslide, frameIndex } = await loadCaseAndData(container);
     addActors(terrain, water, landslide);
     setupControls(container);
 
-    const t = caseInfo.time?.values?.[0];
-    const timeText = Number.isFinite(t) ? `t = ${t.toFixed(2)} s` : 'single frame';
+    const defaultFrameIndex = getDefaultFrameIndex(caseInfo);
+    const t = caseInfo.time?.values?.[defaultFrameIndex];
+    const frameCount = Number(caseInfo.time?.frame_count ?? caseInfo.time?.values?.length ?? 1);
+    const timeText = Number.isFinite(t)
+      ? `t = ${t.toFixed(2)} s, frame ${defaultFrameIndex + 1}/${frameCount}`
+      : 'time series';
 
     setStatus(container, `Loaded Aqaba Case 001 (${timeText}). Drag to rotate, scroll to zoom.`);
   } catch (error) {
