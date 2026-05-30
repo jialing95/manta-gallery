@@ -10,17 +10,14 @@ MANTA Gallery is not an online simulation platform. It displays curated, pre-exp
 
 ### DEM
 
-The DEM uses sea-split visualization:
-
-- Below sea level: `cmocean.deep`
-- Above sea level: `cmcrameri.grayC + relief`
+The DEM uses `cmcrameri.grayC + relief`.
 
 ### Water surface
 
-The water surface is colored by wave amplitude using:
+The water surface is colored by wave height using:
 
-- `dclaw.tsunami`
-- Label: `Wave amplitude (m)`
+- Blue-to-red diverging `dclaw.tsunami` colormap
+- Label: `Wave height (m)`
 
 The water layer is filtered by a water-like solid-fraction cutoff.
 
@@ -28,8 +25,8 @@ The water layer is filtered by a water-like solid-fraction cutoff.
 
 The landslide material layer is colored by one of:
 
-- `hm`: solid-phase thickness
+- `hm`: solid-phase thickness (m)
 - `m`: solid volume fraction
-- `Δb`: bed change
+- `Δb`: bed change (m)
 
 The landslide layer uses the `magma` colormap and is filtered by a landslide solid-fraction cutoff.
