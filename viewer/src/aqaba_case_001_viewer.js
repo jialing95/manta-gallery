@@ -39,6 +39,17 @@ const state = {
     water: null,
     landslide: null,
   },
+  compact: {
+    enabled: false,
+    templates: {
+      water: null,
+      landslide: null,
+    },
+    currentFrames: {
+      water: null,
+      landslide: null,
+    },
+  },
   scalarInfo: {
     water: null,
     landslide: null,
@@ -805,6 +816,270 @@ async function readVtp(url) {
   return output;
 }
 
+const COMPACT_V2_MAGIC = [77, 65, 78, 84, 65, 86, 50, 0];
+const COMPACT_V2_HEADER_BYTES = 16;
+const COMPACT_ARRAY_TYPES = {
+  float32: Float32Array,
+  uint32: Uint32Array,
+  uint8: Uint8Array,
+};
+
+function hasCompactV2Layer(caseInfo, layerName) {
+  return Number(caseInfo?.layers?.[layerName]?.compact?.version) === 2;
+}
+
+function caseUsesCompactV2(caseInfo) {
+  return hasCompactV2Layer(caseInfo, 'water') && hasCompactV2Layer(caseInfo, 'landslide');
+}
+
+async function fetchGzipArrayBuffer(url) {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch compact file: ${url.href} (${response.status})`);
+  }
+  if (typeof DecompressionStream !== 'function' || !response.body) {
+    throw new Error('This browser does not support gzip DecompressionStream required by compact-v2 assets.');
+  }
+
+  const stream = response.body.pipeThrough(new DecompressionStream('gzip'));
+  return new Response(stream).arrayBuffer();
+}
+
+function validateCompactV2Header(buffer, url) {
+  if (buffer.byteLength < COMPACT_V2_HEADER_BYTES) {
+    throw new Error(`Compact-v2 file is too short: ${url.href}`);
+  }
+
+  const bytes = new Uint8Array(buffer, 0, COMPACT_V2_MAGIC.length);
+  for (let i = 0; i < COMPACT_V2_MAGIC.length; i += 1) {
+    if (bytes[i] !== COMPACT_V2_MAGIC[i]) {
+      throw new Error(`Compact-v2 magic mismatch: ${url.href}`);
+    }
+  }
+
+  const view = new DataView(buffer);
+  const version = view.getUint32(8, true);
+  const payloadBytes = view.getUint32(12, true);
+  if (version !== 2 || payloadBytes !== buffer.byteLength - COMPACT_V2_HEADER_BYTES) {
+    throw new Error(`Compact-v2 header mismatch: ${url.href}`);
+  }
+}
+
+function readCompactArrays(buffer, arraySpecs, url) {
+  const arrays = {};
+  for (const [name, spec] of Object.entries(arraySpecs ?? {})) {
+    const ArrayType = COMPACT_ARRAY_TYPES[spec.dtype];
+    const offset = Number(spec.byte_offset);
+    const length = Number(spec.length);
+    if (!ArrayType || !Number.isInteger(offset) || !Number.isInteger(length) || length < 0) {
+      throw new Error(`Invalid compact-v2 array descriptor for ${name}: ${url.href}`);
+    }
+    const end = offset + length * ArrayType.BYTES_PER_ELEMENT;
+    if (offset < COMPACT_V2_HEADER_BYTES || end > buffer.byteLength) {
+      throw new Error(`Compact-v2 array bounds mismatch for ${name}: ${url.href}`);
+    }
+    arrays[name] = new ArrayType(buffer, offset, length);
+  }
+  return arrays;
+}
+
+async function readCompactArchive(path, arraySpecs) {
+  const url = caseUrl(path);
+  const buffer = await fetchGzipArrayBuffer(url);
+  validateCompactV2Header(buffer, url);
+  return readCompactArrays(buffer, arraySpecs, url);
+}
+
+function createCompactPolyData(layerName, compactInfo, templateArrays) {
+  const pointCount = Number(compactInfo.point_count);
+  const cellCount = Number(compactInfo.cell_count);
+  const x = templateArrays.x;
+  const y = templateArrays.y;
+  const quads = templateArrays.quads;
+
+  if (!Number.isInteger(pointCount) || !Number.isInteger(cellCount)) {
+    throw new Error(`Invalid compact-v2 ${layerName} template dimensions.`);
+  }
+  if (x?.length !== pointCount || y?.length !== pointCount || quads?.length !== cellCount * 4) {
+    throw new Error(`Compact-v2 ${layerName} template array lengths do not match the manifest.`);
+  }
+
+  const pointValues = new Float32Array(pointCount * 3);
+  for (let i = 0; i < pointCount; i += 1) {
+    const base = i * 3;
+    pointValues[base] = x[i];
+    pointValues[base + 1] = y[i];
+  }
+
+  const points = vtkPoints.newInstance();
+  points.setData(pointValues, 3);
+  const polys = vtkCellArray.newInstance();
+  polys.setData(new Uint32Array(0));
+
+  const polyData = vtkPolyData.newInstance();
+  polyData.setPoints(points);
+  polyData.setPolys(polys);
+
+  const dataArrays = {};
+  for (const [name, spec] of Object.entries(compactInfo.frame?.arrays ?? {})) {
+    if (name === 'z' || name === 'valid_cells') continue;
+    if (spec.dtype !== 'float32' || Number(spec.length) !== pointCount) {
+      throw new Error(`Compact-v2 ${layerName} point array ${name} has an invalid layout.`);
+    }
+    const array = vtkDataArray.newInstance({
+      name,
+      numberOfComponents: 1,
+      values: new Float32Array(pointCount),
+    });
+    polyData.getPointData().addArray(array);
+    dataArrays[name] = array;
+  }
+
+  return {
+    layerName,
+    polyData,
+    points,
+    polys,
+    pointValues,
+    quads,
+    dataArrays,
+  };
+}
+
+async function loadCompactTemplate(caseInfo, layerName) {
+  const compactInfo = caseInfo.layers[layerName].compact;
+  const templateArrays = await readCompactArchive(
+    compactInfo.template.file,
+    compactInfo.template.arrays
+  );
+  return createCompactPolyData(layerName, compactInfo, templateArrays);
+}
+
+async function loadCompactTemplates(caseInfo) {
+  if (!caseUsesCompactV2(caseInfo)) return;
+  const [water, landslide] = await Promise.all([
+    loadCompactTemplate(caseInfo, 'water'),
+    loadCompactTemplate(caseInfo, 'landslide'),
+  ]);
+  state.compact.templates.water = water;
+  state.compact.templates.landslide = landslide;
+}
+
+async function readCompactLayerFrame(caseInfo, layerName, frameIndex) {
+  const compactInfo = caseInfo.layers[layerName].compact;
+  const path = framePathFromPattern(compactInfo.frame.file_pattern, frameIndex);
+  return readCompactArchive(path, compactInfo.frame.arrays);
+}
+
+async function readCompactFrameData(caseInfo, frameIndex) {
+  const [water, landslide] = await Promise.all([
+    readCompactLayerFrame(caseInfo, 'water', frameIndex),
+    readCompactLayerFrame(caseInfo, 'landslide', frameIndex),
+  ]);
+  return { compact: true, water, landslide };
+}
+
+function compactBitIsSet(bits, index) {
+  return (bits[index >> 3] & (1 << (7 - (index & 7)))) !== 0;
+}
+
+function compactMPointPredicate(layerName) {
+  if (layerName === 'water') {
+    const threshold = Number(state.mThresholds.waterMax);
+    const waterMax = Number.isFinite(threshold) ? threshold : 0.30;
+    return (m) => Number.isFinite(m) && m <= waterMax;
+  }
+
+  const threshold = Number(state.mThresholds.landslideMin);
+  const landslideMin = Number.isFinite(threshold) ? threshold : -0.01;
+  const eps = 1e-12;
+  return (m) => Number.isFinite(m) && (Math.abs(landslideMin) <= eps ? m > 0.0 : m >= landslideMin);
+}
+
+function buildCompactVisiblePolys(template, frameArrays) {
+  const quads = template.quads;
+  const validCells = frameArrays.valid_cells;
+  const m = frameArrays.m;
+  const keepPoint = compactMPointPredicate(template.layerName);
+  const cellCount = Math.floor(quads.length / 4);
+  let visibleCellCount = 0;
+
+  function keepCell(cellIndex) {
+    if (!compactBitIsSet(validCells, cellIndex)) return false;
+    const base = cellIndex * 4;
+    return keepPoint(m[quads[base]])
+      && keepPoint(m[quads[base + 1]])
+      && keepPoint(m[quads[base + 2]])
+      && keepPoint(m[quads[base + 3]]);
+  }
+
+  for (let cellIndex = 0; cellIndex < cellCount; cellIndex += 1) {
+    if (keepCell(cellIndex)) visibleCellCount += 1;
+  }
+
+  const polys = new Uint32Array(visibleCellCount * 5);
+  let target = 0;
+  for (let cellIndex = 0; cellIndex < cellCount; cellIndex += 1) {
+    if (!keepCell(cellIndex)) continue;
+    const source = cellIndex * 4;
+    polys[target] = 4;
+    polys[target + 1] = quads[source];
+    polys[target + 2] = quads[source + 1];
+    polys[target + 3] = quads[source + 2];
+    polys[target + 4] = quads[source + 3];
+    target += 5;
+  }
+  return polys;
+}
+
+function updateCompactLayerDataset(layerName, frameArrays) {
+  const template = state.compact.templates[layerName];
+  if (!template || !frameArrays) return;
+
+  const z = frameArrays.z;
+  if (z.length * 3 !== template.pointValues.length) {
+    throw new Error(`Compact-v2 ${layerName} frame z length does not match its template.`);
+  }
+
+  for (let i = 0; i < z.length; i += 1) {
+    template.pointValues[i * 3 + 2] = z[i];
+  }
+  template.points.dataChange?.();
+  template.points.modified?.();
+
+  for (const [name, dataArray] of Object.entries(template.dataArrays)) {
+    const source = frameArrays[name];
+    const target = dataArray.getData();
+    if (!source || source.length !== target.length) {
+      throw new Error(`Compact-v2 ${layerName} frame array ${name} does not match its template.`);
+    }
+    target.set(source);
+    dataArray.dataChange?.();
+    dataArray.modified?.();
+  }
+
+  template.polys.setData(buildCompactVisiblePolys(template, frameArrays));
+  template.polys.modified?.();
+  template.polyData.modified?.();
+  state.datasets[layerName] = template.polyData;
+}
+
+function applyLoadedFrameData(frameData) {
+  if (frameData?.compact) {
+    state.rawDatasets.water = null;
+    state.rawDatasets.landslide = null;
+    state.compact.currentFrames.water = frameData.water;
+    state.compact.currentFrames.landslide = frameData.landslide;
+    updateCompactLayerDataset('water', frameData.water);
+    updateCompactLayerDataset('landslide', frameData.landslide);
+    return;
+  }
+
+  state.rawDatasets.water = frameData.water;
+  state.rawDatasets.landslide = frameData.landslide;
+  applyMThresholdsToRawDatasets();
+}
+
 function setupScene(host) {
   const renderer = vtkRenderer.newInstance({
     background: [0.03, 0.05, 0.10],
@@ -1354,6 +1629,11 @@ function filterLandslideDataset(rawPolyData) {
 }
 
 function applyMThresholdsToRawDatasets() {
+  if (state.compact.enabled) {
+    updateCompactLayerDataset('water', state.compact.currentFrames.water);
+    updateCompactLayerDataset('landslide', state.compact.currentFrames.landslide);
+    return;
+  }
   if (state.rawDatasets.water) {
     state.datasets.water = filterWaterDataset(state.rawDatasets.water);
   }
@@ -1439,6 +1719,13 @@ async function readFrameData(frameIndex) {
     return state.frameCache.get(k);
   }
 
+  if (state.compact.enabled) {
+    const entry = await readCompactFrameData(caseInfo, k);
+    state.frameCache.set(k, entry);
+    trimFrameCache(k);
+    return entry;
+  }
+
   const waterPath = framePathFromPattern(caseInfo.layers.water.file_pattern, k);
   const landslidePath = framePathFromPattern(caseInfo.layers.landslide.file_pattern, k);
 
@@ -1485,6 +1772,7 @@ async function loadCaseAndData(container) {
   state.caseInfo = caseInfo;
   state.frameCount = getFrameCount(caseInfo);
   state.currentFrameIndex = getDefaultFrameIndex(caseInfo);
+  state.compact.enabled = caseUsesCompactV2(caseInfo);
 
   const terrainPath = caseInfo.layers.terrain.file;
   const terrainUrl = caseUrl(terrainPath);
@@ -1496,13 +1784,14 @@ async function loadCaseAndData(container) {
 
   const [terrain, frameData] = await Promise.all([
     readVtp(terrainUrl),
-    readFrameData(state.currentFrameIndex),
+    Promise.all([
+      loadCompactTemplates(caseInfo),
+      readFrameData(state.currentFrameIndex),
+    ]).then(([, loadedFrame]) => loadedFrame),
   ]);
 
   state.datasets.terrain = terrain;
-  state.rawDatasets.water = frameData.water;
-  state.rawDatasets.landslide = frameData.landslide;
-  applyMThresholdsToRawDatasets();
+  applyLoadedFrameData(frameData);
 
   prefetchNearbyFrames(state.currentFrameIndex);
 
@@ -1649,9 +1938,7 @@ async function requestFrame(frameIndex, container) {
     setStatus(container, `Loading ${getFrameLabel(state.caseInfo, k)}...`);
     const frameData = await readFrameData(k);
 
-    state.rawDatasets.water = frameData.water;
-    state.rawDatasets.landslide = frameData.landslide;
-    applyMThresholdsToRawDatasets();
+    applyLoadedFrameData(frameData);
     state.currentFrameIndex = k;
 
     updateCurrentFrameActors();
