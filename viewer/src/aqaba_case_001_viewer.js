@@ -1819,6 +1819,383 @@ function setupControls(container) {
   updateFrameReadout();
 }
 
+
+
+// -----------------------------------------------------------------------------
+// Map-style viewport overlays: north arrow and dynamic scale bar.
+// These are DOM/SVG overlays only; they do not touch the vtk.js data pipeline.
+// North is +Y in the exported projected coordinate system, and scale is estimated
+// at the camera focal plane from the active camera and render-window size.
+// -----------------------------------------------------------------------------
+const MAP_OVERLAY_CSS_ID = 'manta-map-overlays-css';
+let mapOverlayRaf = null;
+
+function ensureMapOverlayCss() {
+  if (document.getElementById(MAP_OVERLAY_CSS_ID)) return;
+  const style = document.createElement('style');
+  style.id = MAP_OVERLAY_CSS_ID;
+  style.textContent = `
+    .manta-map-compass {
+      position: absolute;
+      left: 18px;
+      bottom: 86px;
+      z-index: 26;
+      width: 118px;
+      height: 118px;
+      pointer-events: none;
+      filter: drop-shadow(0 3px 8px rgba(0, 0, 0, 0.30));
+    }
+
+    .manta-map-compass svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .manta-map-compass-card {
+      fill: rgba(255, 255, 255, 0.88);
+      stroke: rgba(31, 35, 40, 0.25);
+      stroke-width: 1.0;
+    }
+
+    .manta-map-compass-ring {
+      fill: rgba(246, 248, 250, 0.75);
+      stroke: rgba(31, 35, 40, 0.62);
+      stroke-width: 1.25;
+    }
+
+    .manta-map-compass-tick {
+      stroke: rgba(31, 35, 40, 0.55);
+      stroke-width: 1.0;
+      stroke-linecap: round;
+    }
+
+    .manta-map-compass-minor {
+      stroke: rgba(31, 35, 40, 0.28);
+      stroke-width: 0.8;
+      stroke-linecap: round;
+    }
+
+    .manta-map-compass-arrow-n {
+      fill: #203f33;
+      stroke: #10261d;
+      stroke-width: 0.9;
+    }
+
+    .manta-map-compass-arrow-s {
+      fill: #f7f0dc;
+      stroke: #203f33;
+      stroke-width: 0.9;
+    }
+
+    .manta-map-compass-n {
+      font-family: Georgia, 'Times New Roman', serif;
+      font-size: 17px;
+      font-weight: 700;
+      fill: #203f33;
+      letter-spacing: 0.03em;
+    }
+
+    .manta-map-compass-label {
+      font-family: Georgia, 'Times New Roman', serif;
+      font-size: 8px;
+      font-weight: 600;
+      fill: rgba(31, 35, 40, 0.66);
+      letter-spacing: 0.06em;
+    }
+
+    .manta-map-scale {
+      position: absolute;
+      right: 18px;
+      bottom: 86px;
+      z-index: 26;
+      min-width: 170px;
+      padding: 8px 10px 7px;
+      border-radius: 8px;
+      color: #24292f;
+      background: rgba(255, 255, 255, 0.88);
+      border: 1px solid rgba(31, 35, 40, 0.22);
+      box-shadow: 0 3px 10px rgba(0, 0, 0, 0.22);
+      pointer-events: none;
+      font-family: Georgia, 'Times New Roman', serif;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .manta-map-scale-title {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: rgba(31, 35, 40, 0.70);
+      margin-bottom: 4px;
+    }
+
+    .manta-map-scale-bar {
+      position: relative;
+      height: 12px;
+      width: 140px;
+      min-width: 64px;
+      max-width: 260px;
+      border: 1px solid rgba(31, 35, 40, 0.78);
+      box-sizing: border-box;
+      background: linear-gradient(to right, #111 0 25%, #fff 25% 50%, #111 50% 75%, #fff 75% 100%);
+    }
+
+    .manta-map-scale-bar::before,
+    .manta-map-scale-bar::after {
+      content: '';
+      position: absolute;
+      bottom: -5px;
+      width: 1px;
+      height: 5px;
+      background: rgba(31, 35, 40, 0.78);
+    }
+
+    .manta-map-scale-bar::before { left: -1px; }
+    .manta-map-scale-bar::after { right: -1px; }
+
+    .manta-map-scale-labels {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 10px;
+      margin-top: 5px;
+      font-size: 12px;
+      font-weight: 700;
+      color: #24292f;
+    }
+
+    .manta-map-scale-subtitle {
+      margin-top: 2px;
+      font-size: 9px;
+      color: rgba(31, 35, 40, 0.62);
+      letter-spacing: 0.03em;
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+function vectorSubtract(a, b) {
+  return [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+}
+
+function vectorDot(a, b) {
+  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+
+function vectorCross(a, b) {
+  return [
+    a[1] * b[2] - a[2] * b[1],
+    a[2] * b[0] - a[0] * b[2],
+    a[0] * b[1] - a[1] * b[0],
+  ];
+}
+
+function vectorLength(v) {
+  return Math.hypot(v[0], v[1], v[2]);
+}
+
+function vectorNormalize(v) {
+  const len = vectorLength(v);
+  if (!Number.isFinite(len) || len <= 1e-12) return [0, 0, 0];
+  return [v[0] / len, v[1] / len, v[2] / len];
+}
+
+function getCameraBasis() {
+  const camera = state.renderer?.getActiveCamera?.();
+  if (!camera) return null;
+
+  const position = camera.getPosition?.();
+  const focalPoint = camera.getFocalPoint?.();
+  const viewUpRaw = camera.getViewUp?.();
+
+  if (!position || !focalPoint || !viewUpRaw) return null;
+
+  const viewDir = vectorNormalize(vectorSubtract(focalPoint, position));
+  let viewUp = vectorNormalize(viewUpRaw);
+  let right = vectorNormalize(vectorCross(viewDir, viewUp));
+
+  // Re-orthogonalize up to avoid drift after repeated camera rotations.
+  viewUp = vectorNormalize(vectorCross(right, viewDir));
+  right = vectorNormalize(right);
+
+  if (vectorLength(right) <= 1e-12 || vectorLength(viewUp) <= 1e-12) return null;
+  return { camera, position, focalPoint, viewDir, right, viewUp };
+}
+
+function getNorthArrowAngleDegrees() {
+  const basis = getCameraBasis();
+  if (!basis) return 0;
+
+  // In the exported UTM-like projected coordinates, map north is +Y.
+  const north = [0, 1, 0];
+  const sx = vectorDot(north, basis.right);
+  const sy = vectorDot(north, basis.viewUp);
+
+  if (!Number.isFinite(sx) || !Number.isFinite(sy) || Math.hypot(sx, sy) <= 1e-12) return 0;
+
+  // SVG arrow points upward at 0°. Positive CSS rotation turns it clockwise.
+  return Math.atan2(sx, sy) * 180.0 / Math.PI;
+}
+
+function createCompassOverlay(container) {
+  let el = container.querySelector('#manta-map-compass');
+  if (el) return el;
+
+  el = document.createElement('div');
+  el.id = 'manta-map-compass';
+  el.className = 'manta-map-compass';
+  el.innerHTML = `
+    <svg viewBox="0 0 120 120" role="img" aria-label="North arrow">
+      <rect x="8" y="8" width="104" height="104" rx="18" class="manta-map-compass-card"></rect>
+      <circle cx="60" cy="60" r="42" class="manta-map-compass-ring"></circle>
+      <g class="manta-map-compass-static">
+        <line x1="60" y1="17" x2="60" y2="25" class="manta-map-compass-tick"></line>
+        <line x1="60" y1="95" x2="60" y2="103" class="manta-map-compass-tick"></line>
+        <line x1="17" y1="60" x2="25" y2="60" class="manta-map-compass-tick"></line>
+        <line x1="95" y1="60" x2="103" y2="60" class="manta-map-compass-tick"></line>
+        <line x1="31" y1="31" x2="36" y2="36" class="manta-map-compass-minor"></line>
+        <line x1="89" y1="31" x2="84" y2="36" class="manta-map-compass-minor"></line>
+        <line x1="31" y1="89" x2="36" y2="84" class="manta-map-compass-minor"></line>
+        <line x1="89" y1="89" x2="84" y2="84" class="manta-map-compass-minor"></line>
+      </g>
+      <g id="manta-map-compass-rotor" transform="rotate(0 60 60)">
+        <path d="M60 20 L72 61 L60 54 L48 61 Z" class="manta-map-compass-arrow-n"></path>
+        <path d="M60 100 L48 61 L60 68 L72 61 Z" class="manta-map-compass-arrow-s"></path>
+        <circle cx="60" cy="60" r="4.2" fill="#203f33"></circle>
+      </g>
+      <text x="60" y="17" text-anchor="middle" dominant-baseline="middle" class="manta-map-compass-n">N</text>
+      <text x="60" y="111" text-anchor="middle" class="manta-map-compass-label">Aqaba DEM</text>
+    </svg>
+  `;
+  container.appendChild(el);
+  return el;
+}
+
+function createScaleOverlay(container) {
+  let el = container.querySelector('#manta-map-scale');
+  if (el) return el;
+
+  el = document.createElement('div');
+  el.id = 'manta-map-scale';
+  el.className = 'manta-map-scale';
+  el.innerHTML = `
+    <div class="manta-map-scale-title">Scale</div>
+    <div id="manta-map-scale-bar" class="manta-map-scale-bar"></div>
+    <div class="manta-map-scale-labels">
+      <span>0</span>
+      <span id="manta-map-scale-label">—</span>
+    </div>
+    <div class="manta-map-scale-subtitle">at camera focal plane</div>
+  `;
+  container.appendChild(el);
+  return el;
+}
+
+function niceScaleDistance(rawDistance) {
+  if (!Number.isFinite(rawDistance) || rawDistance <= 0) return null;
+  const exponent = Math.floor(Math.log10(rawDistance));
+  const base = 10 ** exponent;
+  const fraction = rawDistance / base;
+  let niceFraction;
+  if (fraction < 1.5) niceFraction = 1;
+  else if (fraction < 3.5) niceFraction = 2;
+  else if (fraction < 7.5) niceFraction = 5;
+  else niceFraction = 10;
+  return niceFraction * base;
+}
+
+function formatScaleDistance(distanceMeters) {
+  if (!Number.isFinite(distanceMeters)) return '—';
+  const d = Math.abs(distanceMeters);
+  if (d >= 1000) {
+    const km = distanceMeters / 1000.0;
+    const absKm = Math.abs(km);
+    if (absKm >= 100) return `${Math.round(km)} km`;
+    if (absKm >= 10) return `${km.toFixed(1)} km`;
+    return `${km.toFixed(2)} km`;
+  }
+  if (d >= 100) return `${Math.round(distanceMeters)} m`;
+  if (d >= 10) return `${distanceMeters.toFixed(1)} m`;
+  if (d >= 1) return `${distanceMeters.toFixed(2)} m`;
+  return `${distanceMeters.toFixed(3)} m`;
+}
+
+function getMetersPerPixelAtFocalPlane(container) {
+  const basis = getCameraBasis();
+  if (!basis) return null;
+
+  const rect = container.querySelector('.manta-vtk-host')?.getBoundingClientRect?.() ?? container.getBoundingClientRect();
+  const height = Math.max(1, Number(rect?.height ?? 0));
+
+  const camera = basis.camera;
+  const parallel = Boolean(camera.getParallelProjection?.());
+
+  if (parallel) {
+    const parallelScale = Number(camera.getParallelScale?.());
+    if (!Number.isFinite(parallelScale) || parallelScale <= 0) return null;
+    return (2.0 * parallelScale) / height;
+  }
+
+  const distance = vectorLength(vectorSubtract(basis.position, basis.focalPoint));
+  const viewAngleDegrees = Number(camera.getViewAngle?.() ?? 30.0);
+  if (!Number.isFinite(distance) || distance <= 0 || !Number.isFinite(viewAngleDegrees) || viewAngleDegrees <= 0) {
+    return null;
+  }
+
+  const visibleHeight = 2.0 * distance * Math.tan((viewAngleDegrees * Math.PI / 180.0) / 2.0);
+  return visibleHeight / height;
+}
+
+function updateCompassOverlay(container) {
+  const rotor = container.querySelector('#manta-map-compass-rotor');
+  if (!rotor) return;
+  const angle = getNorthArrowAngleDegrees();
+  rotor.setAttribute('transform', `rotate(${angle.toFixed(2)} 60 60)`);
+}
+
+function updateScaleOverlay(container) {
+  const bar = container.querySelector('#manta-map-scale-bar');
+  const label = container.querySelector('#manta-map-scale-label');
+  if (!bar || !label) return;
+
+  const rect = container.querySelector('.manta-vtk-host')?.getBoundingClientRect?.() ?? container.getBoundingClientRect();
+  const metersPerPixel = getMetersPerPixelAtFocalPlane(container);
+  if (!Number.isFinite(metersPerPixel) || metersPerPixel <= 0) {
+    label.textContent = '—';
+    return;
+  }
+
+  const targetPixels = Math.max(95, Math.min(210, Number(rect?.width ?? 900) * 0.16));
+  const niceDistance = niceScaleDistance(metersPerPixel * targetPixels);
+  if (!niceDistance) {
+    label.textContent = '—';
+    return;
+  }
+
+  const pixelWidth = Math.max(70, Math.min(280, niceDistance / metersPerPixel));
+  bar.style.width = `${pixelWidth.toFixed(0)}px`;
+  label.textContent = formatScaleDistance(niceDistance);
+}
+
+function startMapOverlays(container) {
+  ensureMapOverlayCss();
+  createCompassOverlay(container);
+  createScaleOverlay(container);
+
+  if (mapOverlayRaf !== null) {
+    window.cancelAnimationFrame(mapOverlayRaf);
+    mapOverlayRaf = null;
+  }
+
+  const tick = () => {
+    updateCompassOverlay(container);
+    updateScaleOverlay(container);
+    mapOverlayRaf = window.requestAnimationFrame(tick);
+  };
+  tick();
+}
+
 async function main() {
   const container = document.getElementById(VIEWER_ID);
   if (!container) {
@@ -1834,7 +2211,9 @@ async function main() {
     const { caseInfo, terrain, water, landslide, frameIndex } = await loadCaseAndData(container);
     addActors(terrain, water, landslide);
     setupControls(container);
-    await updateAmrForCurrentFrame(container);
+    
+    startMapOverlays(container);
+await updateAmrForCurrentFrame(container);
 
     setStatus(
       container,
