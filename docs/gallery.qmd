@@ -5,9 +5,9 @@ title: "Gallery"
 ## Demo cases
 
 ::: {.case-card}
-### Aqaba Case 001
+### Aqaba LSB C10
 
-Interactive 3D view of wave-amplitude evolution and landslide material fields.
+Interactive 3D view of landslide tsunami (case: LSB C10) in the Gulf of Aqaba.
 
 [Open case](cases/aqaba_case_001.qmd)
 :::
