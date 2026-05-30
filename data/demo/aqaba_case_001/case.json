@@ -181,6 +181,64 @@
     },
     "water": {
       "file_pattern": "water/frame_{frame}.vtp",
+      "compact": {
+        "version": 2,
+        "compression": "gzip",
+        "endianness": "little",
+        "point_count": 1029672,
+        "cell_count": 998596,
+        "template": {
+          "file": "water/template.bin.gz",
+          "header_bytes": 16,
+          "uncompressed_bytes": 24214928,
+          "compressed_bytes": 5583778,
+          "arrays": {
+            "x": {
+              "dtype": "float32",
+              "byte_offset": 16,
+              "length": 1029672
+            },
+            "y": {
+              "dtype": "float32",
+              "byte_offset": 4118704,
+              "length": 1029672
+            },
+            "quads": {
+              "dtype": "uint32",
+              "byte_offset": 8237392,
+              "length": 3994384,
+              "components": 4
+            }
+          }
+        },
+        "frame": {
+          "file_pattern": "water/frame_{frame}.bin.gz",
+          "header_bytes": 16,
+          "arrays": {
+            "z": {
+              "dtype": "float32",
+              "byte_offset": 16,
+              "length": 1029672
+            },
+            "wave_amplitude": {
+              "dtype": "float32",
+              "byte_offset": 4118704,
+              "length": 1029672
+            },
+            "m": {
+              "dtype": "float32",
+              "byte_offset": 8237392,
+              "length": 1029672
+            },
+            "valid_cells": {
+              "dtype": "uint8",
+              "byte_offset": 12356080,
+              "length": 124825,
+              "bit_order": "big"
+            }
+          }
+        }
+      },
       "visible": true,
       "time_varying": true,
       "display_scalar": "wave_amplitude",
@@ -207,6 +265,69 @@
     },
     "landslide": {
       "file_pattern": "landslide/frame_{frame}.vtp",
+      "compact": {
+        "version": 2,
+        "compression": "gzip",
+        "endianness": "little",
+        "point_count": 78864,
+        "cell_count": 78255,
+        "template": {
+          "file": "landslide/template.bin.gz",
+          "header_bytes": 16,
+          "uncompressed_bytes": 1883008,
+          "compressed_bytes": 432319,
+          "arrays": {
+            "x": {
+              "dtype": "float32",
+              "byte_offset": 16,
+              "length": 78864
+            },
+            "y": {
+              "dtype": "float32",
+              "byte_offset": 315472,
+              "length": 78864
+            },
+            "quads": {
+              "dtype": "uint32",
+              "byte_offset": 630928,
+              "length": 313020,
+              "components": 4
+            }
+          }
+        },
+        "frame": {
+          "file_pattern": "landslide/frame_{frame}.bin.gz",
+          "header_bytes": 16,
+          "arrays": {
+            "z": {
+              "dtype": "float32",
+              "byte_offset": 16,
+              "length": 78864
+            },
+            "hm": {
+              "dtype": "float32",
+              "byte_offset": 315472,
+              "length": 78864
+            },
+            "m": {
+              "dtype": "float32",
+              "byte_offset": 630928,
+              "length": 78864
+            },
+            "db": {
+              "dtype": "float32",
+              "byte_offset": 946384,
+              "length": 78864
+            },
+            "valid_cells": {
+              "dtype": "uint8",
+              "byte_offset": 1261840,
+              "length": 9782,
+              "bit_order": "big"
+            }
+          }
+        }
+      },
       "visible": true,
       "time_varying": true,
       "filter_scalar": "m",
@@ -226,7 +347,7 @@
           "label": "hm (solid thickness)",
           "unit": "m",
           "range": [
-            1.0004301884691813e-06,
+            1.0009287052525906e-06,
             436.7551574707031
           ]
         },
@@ -242,8 +363,8 @@
           "label": "Δb (bed change)",
           "unit": "m",
           "range": [
-            -172.47725105285645,
-            125.53682088851929
+            -172.4772491455078,
+            125.53681945800781
           ]
         }
       }
@@ -282,6 +403,7 @@
     "export_frame_mode": "all",
     "export_frame_step": 1,
     "vtp_float_dtype": "float32",
+    "browser_asset_format": "compact_v2",
     "stride": {
       "terrain": 5,
       "water": 10,

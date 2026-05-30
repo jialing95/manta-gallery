@@ -29,7 +29,9 @@ Design:
 
 from __future__ import annotations
 
+import gzip
 import json
+import struct
 import sys
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
@@ -72,6 +74,10 @@ WATER_COASTAL_DETAIL_INLAND_M = 500.0
 LANDSLIDE_STRIDE = 0
 VTP_FLOAT_DTYPE = np.float32
 VTP_FLOAT_DTYPE_NAME = "float32"
+COMPACT_FORMAT_VERSION = 2
+COMPACT_MAGIC = b"MANTAV2\0"
+COMPACT_HEADER = struct.Struct("<8sII")
+COMPACT_COMPRESSION_LEVEL = 9
 
 # Water surface export semantics:
 # - Keep m as a scalar for later browser-side thresholding; do NOT hard-filter
@@ -134,11 +140,12 @@ class RangeAccumulator:
         return [self.vmin, self.vmax]
 
 
-def clear_frame_dir(path: Path, pattern: str = "frame_*.vtp") -> None:
+def clear_frame_dir(path: Path) -> None:
     """Remove stale exported frames without deleting the directory itself."""
     path.mkdir(parents=True, exist_ok=True)
-    for old in path.glob(pattern):
-        old.unlink()
+    for pattern in ("frame_*.vtp", "frame_*.bin.gz", "template.bin.gz"):
+        for old in path.glob(pattern):
+            old.unlink()
 
 
 def total_size_mb(path: Path) -> float:
@@ -587,6 +594,200 @@ def write_adaptive_water_vtp(
     }
 
 
+def compact_template_part(source_ids: np.ndarray, cell_mask: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    """Return source point ids and local quads for selected cells."""
+    source_ids = np.asarray(source_ids)
+    cell_mask = np.asarray(cell_mask, dtype=bool)
+    if cell_mask.shape != (source_ids.shape[0] - 1, source_ids.shape[1] - 1):
+        raise ValueError(f"Compact cell mask shape mismatch: {cell_mask.shape} for points {source_ids.shape}")
+
+    rows, cols = np.nonzero(cell_mask)
+    local_ids = np.arange(source_ids.size, dtype=np.uint32).reshape(source_ids.shape)
+    quads = np.column_stack(
+        (
+            local_ids[rows, cols],
+            local_ids[rows, cols + 1],
+            local_ids[rows + 1, cols + 1],
+            local_ids[rows + 1, cols],
+        )
+    )
+    used_ids, inverse = np.unique(quads.ravel(), return_inverse=True)
+    return (
+        source_ids.ravel()[used_ids].astype(np.int64, copy=False),
+        inverse.reshape((-1, 4)).astype(np.uint32, copy=False),
+    )
+
+
+def build_compact_water_template(
+    F: Dict[str, np.ndarray],
+    plan: Dict[str, Any],
+) -> Tuple[Dict[str, np.ndarray], np.ndarray]:
+    """Build one static adaptive water template and its native source ids."""
+    X = np.asarray(F["X"])
+    Y = np.asarray(F["Y"])
+    native_ids = np.arange(X.size, dtype=np.int64).reshape(X.shape)
+    row_indices = np.asarray(plan["row_indices"], dtype=int)
+    col_indices = np.asarray(plan["col_indices"], dtype=int)
+
+    coarse_source_ids, coarse_quads = compact_template_part(
+        native_ids[np.ix_(row_indices, col_indices)],
+        np.asarray(plan["coarse_cell_mask"], dtype=bool),
+    )
+    fine_source_ids, fine_quads = compact_template_part(
+        native_ids,
+        np.asarray(plan["fine_cell_mask"], dtype=bool),
+    )
+    fine_quads = fine_quads + np.uint32(coarse_source_ids.size)
+
+    source_ids = np.concatenate((coarse_source_ids, fine_source_ids))
+    quads = np.concatenate((coarse_quads, fine_quads), axis=0)
+    return (
+        {
+            "x": X.ravel()[source_ids].astype(np.float32, copy=False),
+            "y": Y.ravel()[source_ids].astype(np.float32, copy=False),
+            "quads": quads.astype(np.uint32, copy=False),
+        },
+        source_ids,
+    )
+
+
+def build_compact_landslide_template(
+    F: Dict[str, np.ndarray],
+    global_landslide_roi: Tuple[int, int, int, int],
+) -> Dict[str, np.ndarray]:
+    """Build one static regular-grid landslide template."""
+    r0, r1, c0, c1 = global_landslide_roi
+    X = np.asarray(F["X"])[r0:r1, c0:c1]
+    Y = np.asarray(F["Y"])[r0:r1, c0:c1]
+    point_ids = np.arange(X.size, dtype=np.uint32).reshape(X.shape)
+    rows, cols = np.indices((X.shape[0] - 1, X.shape[1] - 1))
+    quads = np.column_stack(
+        (
+            point_ids[rows, cols].ravel(),
+            point_ids[rows, cols + 1].ravel(),
+            point_ids[rows + 1, cols + 1].ravel(),
+            point_ids[rows + 1, cols].ravel(),
+        )
+    )
+    return {
+        "x": X.ravel().astype(np.float32, copy=False),
+        "y": Y.ravel().astype(np.float32, copy=False),
+        "quads": quads.astype(np.uint32, copy=False),
+    }
+
+
+def as_little_endian_contiguous(a: np.ndarray) -> np.ndarray:
+    """Return a compact little-endian array suitable for browser typed arrays."""
+    arr = np.asarray(a)
+    if arr.dtype.itemsize > 1:
+        arr = arr.astype(arr.dtype.newbyteorder("<"), copy=False)
+    return np.ascontiguousarray(arr)
+
+
+def compact_archive_layout(arrays: Dict[str, np.ndarray]) -> Dict[str, Dict[str, object]]:
+    """Describe packed arrays after the fixed compact-v2 archive header."""
+    offset = COMPACT_HEADER.size
+    layout: Dict[str, Dict[str, object]] = {}
+    for name, value in arrays.items():
+        arr = as_little_endian_contiguous(value)
+        layout[name] = {
+            "dtype": arr.dtype.name,
+            "byte_offset": int(offset),
+            "length": int(arr.size),
+        }
+        if arr.ndim > 1:
+            layout[name]["components"] = int(arr.shape[-1])
+        offset += int(arr.nbytes)
+    return layout
+
+
+def write_compact_archive(path: Path, arrays: Dict[str, np.ndarray]) -> Dict[str, object]:
+    """Write deterministic gzip-compressed compact-v2 arrays."""
+    packed_arrays = {
+        name: as_little_endian_contiguous(value)
+        for name, value in arrays.items()
+    }
+    payload = b"".join(arr.tobytes(order="C") for arr in packed_arrays.values())
+    archive = COMPACT_HEADER.pack(COMPACT_MAGIC, COMPACT_FORMAT_VERSION, len(payload)) + payload
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "wb") as raw:
+        with gzip.GzipFile(
+            filename="",
+            mode="wb",
+            compresslevel=COMPACT_COMPRESSION_LEVEL,
+            fileobj=raw,
+            mtime=0,
+        ) as gz:
+            gz.write(archive)
+
+    return {
+        "header_bytes": int(COMPACT_HEADER.size),
+        "uncompressed_bytes": int(len(archive)),
+        "compressed_bytes": int(path.stat().st_size),
+        "arrays": compact_archive_layout(packed_arrays),
+    }
+
+
+def build_compact_frame_arrays(
+    Z: np.ndarray,
+    point_data: Dict[str, np.ndarray],
+    quads: np.ndarray,
+) -> Tuple[Dict[str, np.ndarray], np.ndarray]:
+    """Pack dynamic point fields and a bitmap of finite renderable quads."""
+    z = np.asarray(Z, dtype=np.float32).ravel()
+    arrays: Dict[str, np.ndarray] = {"z": z}
+    valid_points = np.isfinite(z)
+
+    for name, value in point_data.items():
+        arr = np.asarray(value, dtype=np.float32).ravel()
+        if arr.size != z.size:
+            raise ValueError(f"{name}: compact frame size {arr.size} does not match z size {z.size}")
+        arrays[name] = arr
+        valid_points &= np.isfinite(arr)
+
+    quads = np.asarray(quads, dtype=np.uint32).reshape((-1, 4))
+    valid_cells = np.all(valid_points[quads], axis=1)
+    arrays["valid_cells"] = np.packbits(valid_cells, bitorder="big")
+    return arrays, valid_cells
+
+
+def compact_used_points(valid_cells: np.ndarray, quads: np.ndarray, point_count: int) -> np.ndarray:
+    """Return points participating in at least one finite compact quad."""
+    used = np.zeros(int(point_count), dtype=bool)
+    used[np.asarray(quads, dtype=np.uint32).reshape((-1, 4))[np.asarray(valid_cells, dtype=bool)]] = True
+    return used
+
+
+def compact_layer_manifest(
+    *,
+    template_path: Path,
+    template_meta: Dict[str, object],
+    frame_layout: Dict[str, Dict[str, object]],
+    point_count: int,
+    cell_count: int,
+) -> Dict[str, object]:
+    """Return the compact-v2 layer metadata consumed by the browser."""
+    frame_layout = {name: dict(value) for name, value in frame_layout.items()}
+    frame_layout["valid_cells"]["bit_order"] = "big"
+    return {
+        "version": int(COMPACT_FORMAT_VERSION),
+        "compression": "gzip",
+        "endianness": "little",
+        "point_count": int(point_count),
+        "cell_count": int(cell_count),
+        "template": {
+            "file": str(template_path.relative_to(OUTDIR)),
+            **template_meta,
+        },
+        "frame": {
+            "file_pattern": str((template_path.parent / "frame_{frame}.bin.gz").relative_to(OUTDIR)),
+            "header_bytes": int(COMPACT_HEADER.size),
+            "arrays": frame_layout,
+        },
+    }
+
+
 def crop_dict_to_roi(
     F: Dict[str, np.ndarray],
     roi: Tuple[int, int, int, int],
@@ -890,6 +1091,28 @@ def compute_global_landslide_roi(cube) -> Tuple[Tuple[int, int, int, int], Dict[
 # Export
 # =============================================================================
 
+def preserve_existing_amr_metadata(case: Dict[str, Any]) -> None:
+    """Keep valid AMR sidecar metadata when the main surface export is refreshed."""
+    case_path = OUTDIR / "case.json"
+    amr_frames = sorted((OUTDIR / "amr").glob("frame_*.json"))
+    expected_frames = int(case.get("time", {}).get("frame_count", 0) or 0)
+    if not case_path.is_file() or len(amr_frames) != expected_frames:
+        return
+
+    try:
+        existing = json.loads(case_path.read_text(encoding="utf-8"))
+        existing_amr_layer = existing.get("layers", {}).get("amr")
+        existing_amr_processing = existing.get("processing", {}).get("amr")
+    except Exception:
+        return
+
+    if existing_amr_layer:
+        case.setdefault("layers", {})["amr"] = existing_amr_layer
+        case.setdefault("ui", {})["show_amr_overlay"] = True
+    if existing_amr_processing:
+        case.setdefault("processing", {})["amr"] = existing_amr_processing
+
+
 def export_case() -> None:
     cube = load_cube()
 
@@ -916,6 +1139,21 @@ def export_case() -> None:
     F_default = prepare_fields(S_default)
     F_terrain = apply_stride(F_default, TERRAIN_STRIDE)
     water_coastal_detail_plan = build_water_coastal_detail_plan(F_default)
+    water_template, water_source_ids = build_compact_water_template(
+        F_default,
+        water_coastal_detail_plan,
+    )
+    landslide_template = build_compact_landslide_template(
+        F_default,
+        global_landslide_roi,
+    )
+    water_template_path = water_dir / "template.bin.gz"
+    landslide_template_path = landslide_dir / "template.bin.gz"
+    water_template_meta = write_compact_archive(water_template_path, water_template)
+    landslide_template_meta = write_compact_archive(landslide_template_path, landslide_template)
+    water_quads = np.asarray(water_template["quads"], dtype=np.uint32)
+    landslide_quads = np.asarray(landslide_template["quads"], dtype=np.uint32)
+
     write_surface_vtp(
         F_terrain["X"],
         F_terrain["Y"],
@@ -930,6 +1168,8 @@ def export_case() -> None:
     slide_m_range = RangeAccumulator()
     slide_db_range = RangeAccumulator()
     water_amp_limits: Dict[str, Optional[float]] = {}
+    water_frame_layout: Optional[Dict[str, Dict[str, object]]] = None
+    landslide_frame_layout: Optional[Dict[str, Dict[str, object]]] = None
 
     for out_i, native_k in enumerate(frame_indices):
         print(f"[FRAME] {out_i + 1:>3}/{len(frame_indices)}  native={native_k}")
@@ -937,37 +1177,49 @@ def export_case() -> None:
         F_full = prepare_fields(S)
 
         Xw, Yw, Zw, water_amp, water_m, amp_limit = build_water_surface(F_full)
-        exported_water_data = write_adaptive_water_vtp(
-            Xw,
-            Yw,
-            Zw,
+        water_frame_arrays, water_valid_cells = build_compact_frame_arrays(
+            np.asarray(Zw).ravel()[water_source_ids],
             {
-                "wave_amplitude": water_amp,
-                "m": water_m,
+                "wave_amplitude": np.asarray(water_amp).ravel()[water_source_ids],
+                "m": np.asarray(water_m).ravel()[water_source_ids],
             },
-            water_coastal_detail_plan,
-            water_dir / f"frame_{out_i:04d}.vtp",
+            water_quads,
         )
+        water_frame_meta = write_compact_archive(
+            water_dir / f"frame_{out_i:04d}.bin.gz",
+            water_frame_arrays,
+        )
+        if water_frame_layout is None:
+            water_frame_layout = water_frame_meta["arrays"]
 
         Xs, Ys, Zs, slide_hm, slide_m, slide_db = build_landslide_surface(F_full, global_landslide_roi)
-        write_surface_vtp(
-            Xs,
-            Ys,
+        landslide_frame_arrays, landslide_valid_cells = build_compact_frame_arrays(
             Zs,
             {
                 "hm": slide_hm,
                 "m": slide_m,
                 "db": slide_db,
             },
-            landslide_dir / f"frame_{out_i:04d}.vtp",
+            landslide_quads,
         )
+        landslide_frame_meta = write_compact_archive(
+            landslide_dir / f"frame_{out_i:04d}.bin.gz",
+            landslide_frame_arrays,
+        )
+        if landslide_frame_layout is None:
+            landslide_frame_layout = landslide_frame_meta["arrays"]
 
-        water_amp_range.update(exported_water_data["wave_amplitude"])
-        water_m_range.update(exported_water_data["m"])
-        slide_hm_range.update(slide_hm)
-        slide_m_range.update(slide_m)
-        slide_db_range.update(slide_db)
+        water_used = compact_used_points(water_valid_cells, water_quads, water_source_ids.size)
+        landslide_used = compact_used_points(landslide_valid_cells, landslide_quads, Zs.size)
+        water_amp_range.update(water_frame_arrays["wave_amplitude"][water_used])
+        water_m_range.update(water_frame_arrays["m"][water_used])
+        slide_hm_range.update(landslide_frame_arrays["hm"][landslide_used])
+        slide_m_range.update(landslide_frame_arrays["m"][landslide_used])
+        slide_db_range.update(landslide_frame_arrays["db"][landslide_used])
         water_amp_limits[str(out_i)] = amp_limit
+
+    if water_frame_layout is None or landslide_frame_layout is None:
+        raise ValueError("Compact export failed: no browser frames were written.")
 
     case = {
         "id": OUTDIR.name,
@@ -999,6 +1251,13 @@ def export_case() -> None:
             },
             "water": {
                 "file_pattern": "water/frame_{frame}.vtp",
+                "compact": compact_layer_manifest(
+                    template_path=water_template_path,
+                    template_meta=water_template_meta,
+                    frame_layout=water_frame_layout,
+                    point_count=water_template["x"].size,
+                    cell_count=water_quads.shape[0],
+                ),
                 "visible": True,
                 "time_varying": True,
                 "display_scalar": "wave_amplitude",
@@ -1019,6 +1278,13 @@ def export_case() -> None:
             },
             "landslide": {
                 "file_pattern": "landslide/frame_{frame}.vtp",
+                "compact": compact_layer_manifest(
+                    template_path=landslide_template_path,
+                    template_meta=landslide_template_meta,
+                    frame_layout=landslide_frame_layout,
+                    point_count=landslide_template["x"].size,
+                    cell_count=landslide_quads.shape[0],
+                ),
                 "visible": True,
                 "time_varying": True,
                 "filter_scalar": "m",
@@ -1052,6 +1318,7 @@ def export_case() -> None:
             "export_frame_mode": str(EXPORT_FRAME_MODE),
             "export_frame_step": int(EXPORT_FRAME_STEP),
             "vtp_float_dtype": str(VTP_FLOAT_DTYPE_NAME),
+            "browser_asset_format": "compact_v2",
             "stride": {
                 "terrain": int(TERRAIN_STRIDE),
                 "water": int(WATER_STRIDE),
@@ -1099,6 +1366,8 @@ def export_case() -> None:
         },
     }
 
+    preserve_existing_amr_metadata(case)
+
     with open(OUTDIR / "case.json", "w", encoding="utf-8") as f:
         json.dump(case, f, indent=2, ensure_ascii=False)
 
@@ -1135,14 +1404,14 @@ def print_export_summary(
     slide_db_range,
     roi: Tuple[int, int, int, int],
 ) -> None:
-    water_frames = sorted(water_dir.glob("frame_*.vtp"))
-    landslide_frames = sorted(landslide_dir.glob("frame_*.vtp"))
+    water_frames = sorted(water_dir.glob("frame_*.bin.gz"))
+    landslide_frames = sorted(landslide_dir.glob("frame_*.bin.gz"))
 
     print("[OK] Exported Aqaba Case 001 time series")
     print(f"  outdir:    {OUTDIR}")
     print(f"  terrain:   {terrain_path} ({file_size_mb(terrain_path):.2f} MB)")
-    print(f"  water:     {len(water_frames)} frames ({total_size_mb(water_dir):.2f} MB)")
-    print(f"  landslide: {len(landslide_frames)} frames ({total_size_mb(landslide_dir):.2f} MB)")
+    print(f"  water:     compact v2, {len(water_frames)} frames ({total_size_mb(water_dir):.2f} MB)")
+    print(f"  landslide: compact v2, {len(landslide_frames)} frames ({total_size_mb(landslide_dir):.2f} MB)")
     print(f"  manifest:  {case_path} ({file_size_mb(case_path):.3f} MB)")
     print(f"  package:   {total_size_mb(OUTDIR):.2f} MB")
     print("")

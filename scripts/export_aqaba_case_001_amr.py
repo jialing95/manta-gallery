@@ -2,9 +2,9 @@
 """
 Export FORT AMR diagnostics for Aqaba LSB C10 as lightweight JSON sidecars.
 
-This script is intentionally independent from export_aqaba_case_001.py's VTP
-pipeline. It reads only FORT headers via dclaw_io.fort_cache and does not
-rewrite terrain/water/landslide VTP files.
+This script is intentionally independent from export_aqaba_case_001.py's
+surface pipeline. It reads only FORT headers via dclaw_io.fort_cache and does
+not rewrite terrain or compact water/landslide files.
 
 Run from repository root:
     cd ~/Desktop/manta-gallery

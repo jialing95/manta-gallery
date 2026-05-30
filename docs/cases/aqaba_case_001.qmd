@@ -33,7 +33,8 @@ Aqaba LSB C10 is an interactive 3D D-Claw landslide-tsunami case for the Gulf of
 | Water stride | `10` |
 | Water coastal detail | Native resolution (`stride = 0`) within `100 m` offshore and `500 m` inland from the `z = 0` coastline |
 | Landslide stride | Native resolution (`0`) |
-| VTP floating-point precision | `Float32` |
+| Browser asset format | Compact v2: static `X / Y / quad topology` templates plus gzip-compressed per-frame arrays |
+| Dynamic array precision | `Float32` |
 | Terrain reuse | Single static `terrain.vtp` reused across frames; DEM is not regenerated or updated online during playback. |
 | Landslide ROI | Global union over all `72` frames |
 | Landslide ROI pad | `24` native grid cells |

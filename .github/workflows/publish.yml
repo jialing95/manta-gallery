@@ -25,6 +25,9 @@ jobs:
       - name: Set up Quarto
         uses: quarto-dev/quarto-actions/setup@v2
 
+      - name: Sync canonical gallery assets
+        run: ./scripts/sync_demo_assets.sh
+
       - name: Render Quarto site
         run: quarto render docs
 
