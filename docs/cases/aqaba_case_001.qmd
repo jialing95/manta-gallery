@@ -30,11 +30,13 @@ Aqaba LSB C10 is an interactive 3D D-Claw landslide-tsunami case for the Gulf of
 | Default display frame | `20` |
 | Frame count | all exported time frames |
 | Terrain stride | `5` |
-| Water stride | `20` |
-| Landslide stride | `5` |
+| Water stride | `10` |
+| Water coastal detail | Native resolution (`stride = 0`) within `100 m` offshore and `500 m` inland from the `z = 0` coastline |
+| Landslide stride | Native resolution (`0`) |
+| VTP floating-point precision | `Float32` |
 | Terrain reuse | Single static `terrain.vtp` reused across frames; DEM is not regenerated or updated online during playback. |
 | Landslide ROI | Global union over all `72` frames |
-| Landslide ROI pad | `24` cells |
+| Landslide ROI pad | `24` native grid cells |
 | Water threshold | default `m <= 0.3`; `m` is preserved for future browser-side thresholding |
 | Landslide threshold | `m >= 0.0` |
 
@@ -47,7 +49,7 @@ Aqaba LSB C10 is an interactive 3D D-Claw landslide-tsunami case for the Gulf of
 |---|---|
 | DEM bathymetry | Sea-split target: `cmocean.deep`; currently kept as a static gray relief surface. |
 | DEM topography | Sea-split target: `cmcrameri.grayC + relief / hillshade`; terrain is exported at higher resolution than water frames. |
-| Water surface | Scalar = `wave_amplitude`; colorbar shows the full exported statistics range, while colors use a one-tenth symmetric display range for vivid playback. |
+| Water surface | Scalar = `wave_amplitude`; colorbar shows the full exported statistics range, while colors use a one-tenth symmetric display range for vivid playback. Surface opacity = `1.0` to preserve the mapped colors. |
 | Landslide | Scalar selector = `hm / m / Δb`; colormap = `magma`. |
 
 </details>
