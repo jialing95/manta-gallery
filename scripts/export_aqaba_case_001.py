@@ -19,8 +19,10 @@ Output:
 
 Design:
     - DEM is exported once as a static high-resolution VTP and reused by all frames.
-    - Water is exported as time-dependent VTP frames with a coarser stride.
+    - Water uses a regional stride plus native-resolution offshore/inland
+      shoreline bands for inundation detail without oversized browser assets.
     - Landslide is exported with finer stride and cropped to a global ROI.
+    - Browser VTP coordinates and scalars are written as Float32.
     - The landslide ROI is the union of landslide footprints over multiple frames,
       not only the target display frame.
 """
@@ -63,8 +65,13 @@ LANDSLIDE_M_DEFAULT = 0.0
 # Terrain is a static background VTP: export it finer and reuse it across all
 # future time frames instead of writing one DEM per frame.
 TERRAIN_STRIDE = 5
-WATER_STRIDE = 20
-LANDSLIDE_STRIDE = 5
+WATER_STRIDE = 10
+WATER_COASTAL_DETAIL_STRIDE = 0
+WATER_COASTAL_DETAIL_OFFSHORE_M = 100.0
+WATER_COASTAL_DETAIL_INLAND_M = 500.0
+LANDSLIDE_STRIDE = 0
+VTP_FLOAT_DTYPE = np.float32
+VTP_FLOAT_DTYPE_NAME = "float32"
 
 # Water surface export semantics:
 # - Keep m as a scalar for later browser-side thresholding; do NOT hard-filter
@@ -88,8 +95,8 @@ ROI_FRAME_MODE = "all"
 ROI_FRAME_STEP = 1
 ROI_FRAME_INDICES = [0, 10, 20, 30, 40, 50, 60]
 
-# Pad is counted after LANDSLIDE_STRIDE downsampling.
-# With LANDSLIDE_STRIDE=5, pad=24 is intentionally conservative.
+# Pad is counted after LANDSLIDE_STRIDE downsampling. A stride of 0 means native
+# resolution, so the current pad is counted in native grid cells.
 LANDSLIDE_ROI_PAD = 24
 
 # Detect landslide ROI by hm. Keep this very small to include weak/edge material.
@@ -191,16 +198,14 @@ def get_frame_times(cube, frame_indices: list[int]) -> list[float]:
 
 
 def build_water_surface(F_full: Dict[str, np.ndarray]):
-    """Build one strided water frame while preserving m for later thresholding."""
-    F_water = apply_stride(F_full, WATER_STRIDE)
-
-    X = F_water["X"]
-    Y = F_water["Y"]
-    b0 = F_water["b0"]
-    h = F_water["h"]
-    eta = F_water["eta"]
-    m = F_water["m"]
-    wave_amplitude = F_water["wave_amplitude"]
+    """Build one native-resolution water frame for adaptive mesh export."""
+    X = F_full["X"]
+    Y = F_full["Y"]
+    b0 = F_full["b0"]
+    h = F_full["h"]
+    eta = F_full["eta"]
+    m = F_full["m"]
+    wave_amplitude = F_full["wave_amplitude"]
 
     # Wet/dry is physical depth + finite eta, not the default m threshold.
     wet = np.isfinite(h) & (h > float(WATER_DRY_TOL)) & np.isfinite(eta)
@@ -347,18 +352,239 @@ def robust_abs_limit(
 
 
 def apply_stride(F: Dict[str, np.ndarray], stride: int) -> Dict[str, np.ndarray]:
-    stride = int(max(1, stride))
-    if stride == 1:
+    step = stride_step(stride)
+    if step == 1:
         return F
 
     out: Dict[str, np.ndarray] = {}
     for key, val in F.items():
         arr = np.asarray(val)
         if arr.ndim == 2:
-            out[key] = arr[::stride, ::stride]
+            out[key] = arr[::step, ::step]
         else:
             out[key] = arr
     return out
+
+
+def stride_step(stride: int) -> int:
+    """Return the slicing step; stride=0 is the explicit native-resolution mode."""
+    return max(1, int(stride))
+
+
+def stride_indices(size: int, stride: int) -> np.ndarray:
+    """Return strided indices while retaining the last boundary point."""
+    indices = np.arange(0, int(size), stride_step(stride), dtype=int)
+    if indices.size == 0 or indices[-1] != int(size) - 1:
+        indices = np.append(indices, int(size) - 1)
+    return indices
+
+
+def estimate_grid_spacing(X: np.ndarray, Y: np.ndarray) -> Tuple[float, float]:
+    """Estimate native row/column spacing in the projected grid units."""
+    X = np.asarray(X, dtype=float)
+    Y = np.asarray(Y, dtype=float)
+
+    row_steps = np.hypot(np.diff(X, axis=0), np.diff(Y, axis=0))
+    col_steps = np.hypot(np.diff(X, axis=1), np.diff(Y, axis=1))
+
+    def median_positive(a: np.ndarray, name: str) -> float:
+        vals = a[np.isfinite(a) & (a > 0.0)]
+        if vals.size == 0:
+            raise ValueError(f"Cannot estimate {name} grid spacing.")
+        return float(np.nanmedian(vals))
+
+    return median_positive(row_steps, "row"), median_positive(col_steps, "column")
+
+
+def build_water_coastal_detail_plan(F: Dict[str, np.ndarray]) -> Dict[str, Any]:
+    """
+    Replace coarse water cells near the z=0 coastline with native-resolution cells.
+
+    Fine cells are selected in complete coarse-cell blocks. This makes the fine
+    and coarse meshes meet at shared block boundaries without overlapping faces.
+    """
+    from scipy.ndimage import distance_transform_edt
+
+    X = np.asarray(F["X"], dtype=float)
+    Y = np.asarray(F["Y"], dtype=float)
+    b0 = np.asarray(F["b0"], dtype=float)
+    if X.shape != Y.shape or X.shape != b0.shape:
+        raise ValueError(f"Coastal detail X/Y/b0 shape mismatch: {X.shape}, {Y.shape}, {b0.shape}")
+
+    finite = np.isfinite(b0)
+    below_sea_level = finite & (b0 <= float(SEA_LEVEL))
+    shoreline = np.zeros_like(below_sea_level, dtype=bool)
+
+    cross_rows = (
+        finite[:-1, :]
+        & finite[1:, :]
+        & (below_sea_level[:-1, :] != below_sea_level[1:, :])
+    )
+    shoreline[:-1, :] |= cross_rows
+    shoreline[1:, :] |= cross_rows
+
+    cross_cols = (
+        finite[:, :-1]
+        & finite[:, 1:]
+        & (below_sea_level[:, :-1] != below_sea_level[:, 1:])
+    )
+    shoreline[:, :-1] |= cross_cols
+    shoreline[:, 1:] |= cross_cols
+
+    if not np.any(shoreline):
+        raise ValueError("Cannot preserve coastal water detail: no z=0 coastline crossings were found.")
+
+    row_spacing, col_spacing = estimate_grid_spacing(X, Y)
+    distance_to_shore = distance_transform_edt(
+        ~shoreline,
+        sampling=(row_spacing, col_spacing),
+    )
+    coastal_points = (
+        shoreline
+        | (below_sea_level & (distance_to_shore <= float(WATER_COASTAL_DETAIL_OFFSHORE_M)))
+        | (
+            finite
+            & ~below_sea_level
+            & (distance_to_shore <= float(WATER_COASTAL_DETAIL_INLAND_M))
+        )
+    )
+
+    row_indices = stride_indices(X.shape[0], WATER_STRIDE)
+    col_indices = stride_indices(X.shape[1], WATER_STRIDE)
+    coarse_cell_mask = np.ones((row_indices.size - 1, col_indices.size - 1), dtype=bool)
+    fine_cell_mask = np.zeros((X.shape[0] - 1, X.shape[1] - 1), dtype=bool)
+
+    for coarse_r, (r0, r1) in enumerate(zip(row_indices[:-1], row_indices[1:])):
+        for coarse_c, (c0, c1) in enumerate(zip(col_indices[:-1], col_indices[1:])):
+            if np.any(coastal_points[r0:r1 + 1, c0:c1 + 1]):
+                coarse_cell_mask[coarse_r, coarse_c] = False
+                fine_cell_mask[r0:r1, c0:c1] = True
+
+    return {
+        "row_indices": row_indices,
+        "col_indices": col_indices,
+        "coarse_cell_mask": coarse_cell_mask,
+        "fine_cell_mask": fine_cell_mask,
+        "row_spacing_m": float(row_spacing),
+        "col_spacing_m": float(col_spacing),
+        "shoreline_point_count": int(np.count_nonzero(shoreline)),
+        "coastal_point_count": int(np.count_nonzero(coastal_points)),
+        "fine_cell_count": int(np.count_nonzero(fine_cell_mask)),
+        "coarse_cell_count": int(np.count_nonzero(coarse_cell_mask)),
+    }
+
+
+def take_2d_indices(a: np.ndarray, row_indices: np.ndarray, col_indices: np.ndarray) -> np.ndarray:
+    """Take the rectangular point subset defined by row and column indices."""
+    return np.asarray(a)[np.ix_(row_indices, col_indices)]
+
+
+def surface_polydata_from_cell_mask(
+    X: np.ndarray,
+    Y: np.ndarray,
+    Z: np.ndarray,
+    point_data: Dict[str, np.ndarray],
+    cell_mask: np.ndarray,
+):
+    """Create sparse quad PolyData containing only selected finite cells."""
+    import pyvista as pv
+
+    X = np.asarray(X, dtype=float)
+    Y = np.asarray(Y, dtype=float)
+    Z = np.asarray(Z, dtype=float)
+    cell_mask = np.asarray(cell_mask, dtype=bool)
+
+    if X.shape != Y.shape or X.shape != Z.shape:
+        raise ValueError(f"X/Y/Z shape mismatch: {X.shape}, {Y.shape}, {Z.shape}")
+    if cell_mask.shape != (X.shape[0] - 1, X.shape[1] - 1):
+        raise ValueError(f"Cell mask shape mismatch: {cell_mask.shape} for points {X.shape}")
+
+    valid_points = np.isfinite(X) & np.isfinite(Y) & np.isfinite(Z)
+    arrays: Dict[str, np.ndarray] = {}
+    for key, val in point_data.items():
+        arr = np.asarray(val, dtype=float)
+        if arr.shape != X.shape:
+            raise ValueError(f"{key}: shape {arr.shape} does not match grid shape {X.shape}")
+        arrays[key] = arr
+        valid_points &= np.isfinite(arr)
+
+    valid_cells = (
+        cell_mask
+        & valid_points[:-1, :-1]
+        & valid_points[:-1, 1:]
+        & valid_points[1:, 1:]
+        & valid_points[1:, :-1]
+    )
+    rows, cols = np.nonzero(valid_cells)
+    if rows.size == 0:
+        return pv.PolyData()
+
+    point_ids = np.arange(X.size, dtype=np.int64).reshape(X.shape)
+    quads = np.column_stack(
+        (
+            point_ids[rows, cols],
+            point_ids[rows, cols + 1],
+            point_ids[rows + 1, cols + 1],
+            point_ids[rows + 1, cols],
+        )
+    )
+    used_ids, inverse = np.unique(quads.ravel(), return_inverse=True)
+    points = np.column_stack(
+        (X.ravel()[used_ids], Y.ravel()[used_ids], Z.ravel()[used_ids])
+    ).astype(VTP_FLOAT_DTYPE, copy=False)
+    faces = np.column_stack(
+        (np.full(quads.shape[0], 4, dtype=np.int64), inverse.reshape((-1, 4)))
+    ).ravel()
+
+    mesh = pv.PolyData(points, faces)
+    for key, arr in arrays.items():
+        mesh.point_data[key] = arr.ravel()[used_ids].astype(VTP_FLOAT_DTYPE, copy=False)
+    return mesh
+
+
+def write_adaptive_water_vtp(
+    X: np.ndarray,
+    Y: np.ndarray,
+    Z: np.ndarray,
+    point_data: Dict[str, np.ndarray],
+    plan: Dict[str, Any],
+    path: Path,
+) -> Dict[str, np.ndarray]:
+    """Write coarse regional water plus native-resolution shoreline blocks."""
+    row_indices = np.asarray(plan["row_indices"], dtype=int)
+    col_indices = np.asarray(plan["col_indices"], dtype=int)
+
+    coarse_point_data = {
+        key: take_2d_indices(val, row_indices, col_indices)
+        for key, val in point_data.items()
+    }
+    coarse_mesh = surface_polydata_from_cell_mask(
+        take_2d_indices(X, row_indices, col_indices),
+        take_2d_indices(Y, row_indices, col_indices),
+        take_2d_indices(Z, row_indices, col_indices),
+        coarse_point_data,
+        np.asarray(plan["coarse_cell_mask"], dtype=bool),
+    )
+    fine_mesh = surface_polydata_from_cell_mask(
+        X,
+        Y,
+        Z,
+        point_data,
+        np.asarray(plan["fine_cell_mask"], dtype=bool),
+    )
+
+    meshes = [mesh for mesh in (coarse_mesh, fine_mesh) if mesh.n_cells > 0]
+    if not meshes:
+        raise ValueError("Adaptive water surface contains no finite cells.")
+    mesh = meshes[0].append_polydata(*meshes[1:]) if len(meshes) > 1 else meshes[0]
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    mesh.save(str(path), binary=True)
+
+    return {
+        key: np.concatenate([np.asarray(part.point_data[key]) for part in meshes])
+        for key in point_data
+    }
 
 
 def crop_dict_to_roi(
@@ -448,9 +674,9 @@ def write_surface_vtp(
     """
     import pyvista as pv
 
-    X = np.asarray(X, dtype=float)
-    Y = np.asarray(Y, dtype=float)
-    Z = np.asarray(Z, dtype=float)
+    X = np.asarray(X, dtype=VTP_FLOAT_DTYPE)
+    Y = np.asarray(Y, dtype=VTP_FLOAT_DTYPE)
+    Z = np.asarray(Z, dtype=VTP_FLOAT_DTYPE)
 
     if X.shape != Y.shape or X.shape != Z.shape:
         raise ValueError(f"X/Y/Z shape mismatch: {X.shape}, {Y.shape}, {Z.shape}")
@@ -458,7 +684,7 @@ def write_surface_vtp(
     grid = pv.StructuredGrid(X, Y, Z)
 
     for key, val in point_data.items():
-        arr = np.asarray(val, dtype=float)
+        arr = np.asarray(val, dtype=VTP_FLOAT_DTYPE)
 
         if arr.shape != X.shape:
             if arr.ndim == 2 and arr.T.shape == X.shape:
@@ -689,6 +915,7 @@ def export_case() -> None:
     S_default = cube.get_slice(frame_indices[default_index])
     F_default = prepare_fields(S_default)
     F_terrain = apply_stride(F_default, TERRAIN_STRIDE)
+    water_coastal_detail_plan = build_water_coastal_detail_plan(F_default)
     write_surface_vtp(
         F_terrain["X"],
         F_terrain["Y"],
@@ -710,7 +937,7 @@ def export_case() -> None:
         F_full = prepare_fields(S)
 
         Xw, Yw, Zw, water_amp, water_m, amp_limit = build_water_surface(F_full)
-        write_surface_vtp(
+        exported_water_data = write_adaptive_water_vtp(
             Xw,
             Yw,
             Zw,
@@ -718,6 +945,7 @@ def export_case() -> None:
                 "wave_amplitude": water_amp,
                 "m": water_m,
             },
+            water_coastal_detail_plan,
             water_dir / f"frame_{out_i:04d}.vtp",
         )
 
@@ -734,8 +962,8 @@ def export_case() -> None:
             landslide_dir / f"frame_{out_i:04d}.vtp",
         )
 
-        water_amp_range.update(water_amp)
-        water_m_range.update(water_m)
+        water_amp_range.update(exported_water_data["wave_amplitude"])
+        water_m_range.update(exported_water_data["m"])
         slide_hm_range.update(slide_hm)
         slide_m_range.update(slide_m)
         slide_db_range.update(slide_db)
@@ -823,9 +1051,11 @@ def export_case() -> None:
             "sea_level": float(SEA_LEVEL),
             "export_frame_mode": str(EXPORT_FRAME_MODE),
             "export_frame_step": int(EXPORT_FRAME_STEP),
+            "vtp_float_dtype": str(VTP_FLOAT_DTYPE_NAME),
             "stride": {
                 "terrain": int(TERRAIN_STRIDE),
                 "water": int(WATER_STRIDE),
+                "water_coastal_detail": int(WATER_COASTAL_DETAIL_STRIDE),
                 "landslide": int(LANDSLIDE_STRIDE),
             },
             "landslide_roi": {
@@ -839,6 +1069,20 @@ def export_case() -> None:
             "water_surface": {
                 "description": "Colored by wave amplitude; m is preserved for browser-side thresholding.",
                 "dry_tolerance": float(WATER_DRY_TOL),
+                "coastal_detail": {
+                    "enabled": True,
+                    "coastline_elevation_m": float(SEA_LEVEL),
+                    "offshore_width_m": float(WATER_COASTAL_DETAIL_OFFSHORE_M),
+                    "inland_width_m": float(WATER_COASTAL_DETAIL_INLAND_M),
+                    "stride": int(WATER_COASTAL_DETAIL_STRIDE),
+                    "stride_meaning": "native_resolution",
+                    "row_spacing_m": float(water_coastal_detail_plan["row_spacing_m"]),
+                    "col_spacing_m": float(water_coastal_detail_plan["col_spacing_m"]),
+                    "shoreline_point_count": int(water_coastal_detail_plan["shoreline_point_count"]),
+                    "coastal_point_count": int(water_coastal_detail_plan["coastal_point_count"]),
+                    "fine_cell_count": int(water_coastal_detail_plan["fine_cell_count"]),
+                    "coarse_cell_count": int(water_coastal_detail_plan["coarse_cell_count"]),
+                },
                 "ocean_base_gate": {
                     "enabled": bool(WATER_REQUIRE_OCEAN_BASE),
                     "b0_max": float(SEA_LEVEL + WATER_OCEAN_B0_EPS),
@@ -908,6 +1152,12 @@ def print_export_summary(
     print(f"  default native frame:   {native_default}")
     print(f"  terrain stride:         {TERRAIN_STRIDE}")
     print(f"  water stride:           {WATER_STRIDE}")
+    print(
+        "  water coastal detail:  "
+        f"stride={WATER_COASTAL_DETAIL_STRIDE}, offshore={WATER_COASTAL_DETAIL_OFFSHORE_M:.0f} m, "
+        f"inland={WATER_COASTAL_DETAIL_INLAND_M:.0f} m from z={SEA_LEVEL:g}"
+    )
+    print(f"  vtp float dtype:        {VTP_FLOAT_DTYPE_NAME}")
     print(f"  landslide stride:       {LANDSLIDE_STRIDE}")
     print(f"  landslide roi pad:      {LANDSLIDE_ROI_PAD}")
     print(f"  landslide roi rc:       {roi}")

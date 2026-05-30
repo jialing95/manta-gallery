@@ -861,6 +861,7 @@ const MAGMA_COLOR_STOPS = [
 
 const WATER_COLOR_STOPS = TSUNAMI_COLOR_STOPS;
 const WATER_DISPLAY_RANGE_FRACTION = 1.0 / 10.0;
+const WATER_SURFACE_OPACITY = 1.0;
 const LANDSLIDE_COLOR_STOPS = {
   hm: MAGMA_COLOR_STOPS,
   m: MAGMA_COLOR_STOPS,
@@ -1521,7 +1522,7 @@ function addActors(terrain, water, landslide) {
     ['wave_amplitude'],
     WATER_COLOR_STOPS,
     [0.10, 0.36, 0.85],
-    0.72,
+    WATER_SURFACE_OPACITY,
     {
       fixedRange: getWaterDisplayRange(),
       rangeMode: 'robust-symmetric',
