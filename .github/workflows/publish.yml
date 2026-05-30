@@ -22,6 +22,18 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install viewer dependencies
+        run: npm ci
+
+      - name: Build viewer bundle
+        run: npm run build:viewer
+
       - name: Set up Quarto
         uses: quarto-dev/quarto-actions/setup@v2
 

@@ -6,10 +6,8 @@ This script is intentionally independent from export_aqaba_case_001.py's
 surface pipeline. It reads only FORT headers via dclaw_io.fort_cache and does
 not rewrite terrain or compact water/landslide files.
 
-Run from repository root:
-    cd ~/Desktop/manta-gallery
-    conda activate ./.venv
-    python scripts/export_aqaba_case_001_amr.py
+Preferred one-command build from the repository root:
+    ./scripts/build_site.sh /path/to/dclaw-case
 
 Output:
     data/demo/aqaba_case_001/amr/frame_0000.json ...
@@ -18,6 +16,7 @@ Output:
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from pathlib import Path
@@ -35,6 +34,27 @@ from export_aqaba_case_001 import (  # type: ignore
 
 AMR_OUTDIR = OUTDIR / "amr"
 AMR_FILE_PATTERN = "amr/frame_{frame}.json"
+
+
+def configure_runtime(
+    *,
+    case_dir: Optional[Path] = None,
+    manta_src: Optional[Path] = None,
+    outdir: Optional[Path] = None,
+    frame_index: Optional[int] = None,
+) -> None:
+    """Use the same local paths as the compact surface export."""
+    global CASE_DIR, MANTA_SRC, OUTDIR, AMR_OUTDIR, FRAME_INDEX
+
+    if case_dir is not None:
+        CASE_DIR = Path(case_dir).expanduser().resolve()
+    if manta_src is not None:
+        MANTA_SRC = Path(manta_src).expanduser().resolve()
+    if outdir is not None:
+        OUTDIR = Path(outdir).expanduser().resolve()
+    if frame_index is not None:
+        FRAME_INDEX = int(frame_index)
+    AMR_OUTDIR = OUTDIR / "amr"
 
 
 def _as_float(x: Any, default: Optional[float] = None) -> Optional[float]:
@@ -252,6 +272,22 @@ def update_case_json(nt: int, times: List[float], global_level_counts: Dict[str,
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Export lightweight AMR sidecars from D-Claw FORT headers."
+    )
+    parser.add_argument("--case-dir", type=Path, default=CASE_DIR)
+    parser.add_argument("--manta-src", type=Path, default=MANTA_SRC)
+    parser.add_argument("--outdir", type=Path, default=OUTDIR)
+    parser.add_argument("--frame-index", type=int, default=FRAME_INDEX)
+    args = parser.parse_args()
+
+    configure_runtime(
+        case_dir=args.case_dir,
+        manta_src=args.manta_src,
+        outdir=args.outdir,
+        frame_index=args.frame_index,
+    )
+
     cube = load_fort_cube()
     times = get_times(cube)
     nt = get_nt(cube, times)
