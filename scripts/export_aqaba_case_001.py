@@ -5,17 +5,17 @@ Export Aqaba Case 001 for MANTA Gallery.
 Place this file at:
     ~/Desktop/manta-gallery/scripts/export_aqaba_case_001.py
 
-Run from the repository root:
-    cd ~/Desktop/manta-gallery
-    export PY=/home/daij/Desktop/preprocessor/.venv/bin/python
-    $PY scripts/export_aqaba_case_001.py
+Preferred one-command build from the repository root:
+    ./scripts/build_site.sh /path/to/dclaw-case
 
 Output:
     data/demo/aqaba_case_001/
     ├── case.json
     ├── terrain.vtp
-    ├── water/frame_0000.vtp
-    └── landslide/frame_0000.vtp
+    ├── water/template.bin.gz
+    ├── water/frame_0000.bin.gz
+    ├── landslide/template.bin.gz
+    └── landslide/frame_0000.bin.gz
 
 Design:
     - DEM is exported once as a static high-resolution VTP and reused by all frames.
@@ -29,6 +29,7 @@ Design:
 
 from __future__ import annotations
 
+import argparse
 import gzip
 import json
 import struct
@@ -114,6 +115,29 @@ TITLE = "Aqaba LSB C10"
 # =============================================================================
 # Utilities
 # =============================================================================
+
+def configure_runtime(
+    *,
+    case_dir: Optional[Path] = None,
+    manta_src: Optional[Path] = None,
+    outdir: Optional[Path] = None,
+    frame_index: Optional[int] = None,
+    title: Optional[str] = None,
+) -> None:
+    """Override case paths without editing this file for each local export."""
+    global CASE_DIR, MANTA_SRC, OUTDIR, FRAME_INDEX, TITLE
+
+    if case_dir is not None:
+        CASE_DIR = Path(case_dir).expanduser().resolve()
+    if manta_src is not None:
+        MANTA_SRC = Path(manta_src).expanduser().resolve()
+    if outdir is not None:
+        OUTDIR = Path(outdir).expanduser().resolve()
+    if frame_index is not None:
+        FRAME_INDEX = int(frame_index)
+    if title is not None:
+        TITLE = str(title)
+
 
 # =============================================================================
 # Time-series export helpers
@@ -1439,5 +1463,26 @@ def print_export_summary(
     print(f"  landslide db:           {slide_db_range}")
 
 
-if __name__ == "__main__":
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Export the Aqaba LSB C10 compact gallery assets from D-Claw FORT output."
+    )
+    parser.add_argument("--case-dir", type=Path, default=CASE_DIR)
+    parser.add_argument("--manta-src", type=Path, default=MANTA_SRC)
+    parser.add_argument("--outdir", type=Path, default=OUTDIR)
+    parser.add_argument("--frame-index", type=int, default=FRAME_INDEX)
+    parser.add_argument("--title", default=TITLE)
+    args = parser.parse_args()
+
+    configure_runtime(
+        case_dir=args.case_dir,
+        manta_src=args.manta_src,
+        outdir=args.outdir,
+        frame_index=args.frame_index,
+        title=args.title,
+    )
     export_case()
+
+
+if __name__ == "__main__":
+    main()
