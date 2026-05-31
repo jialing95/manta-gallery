@@ -1,6 +1,7 @@
 import '@kitware/vtk.js/Rendering/Profiles/Geometry';
 import vtkActor from '@kitware/vtk.js/Rendering/Core/Actor';
 import vtkMapper from '@kitware/vtk.js/Rendering/Core/Mapper';
+import vtkTexture from '@kitware/vtk.js/Rendering/Core/Texture';
 import vtkColorTransferFunction from '@kitware/vtk.js/Rendering/Core/ColorTransferFunction';
 import vtkXMLPolyDataReader from '@kitware/vtk.js/IO/XML/XMLPolyDataReader';
 import vtkPolyData from '@kitware/vtk.js/Common/DataModel/PolyData';
@@ -83,7 +84,7 @@ const state = {
     enabled: false,
     loading: false,
     token: 0,
-    providerId: 'esri_world_street',
+    providerId: 'opentopomap',
     attribution: '',
   },
   amrCache: new Map(),
@@ -487,6 +488,7 @@ function setupDom(container) {
       <div class="manta-viewer-legend-row">
         <span class="manta-swatch manta-swatch-terrain"></span>
         Terrain
+        <span id="terrain-scalar-readout" class="manta-viewer-legend-value">projection loading</span>
       </div>
       <div class="manta-viewer-legend-row">
         <span class="manta-swatch manta-swatch-water"></span>
@@ -535,7 +537,9 @@ function setupDom(container) {
       <label title="Choose the online basemap provider used by the Map button.">
         Map source:
         <select id="map-provider">
-          <option value="esri_world_street" selected>Esri Streets</option>
+          <option value="opentopomap" selected>OpenStreetMap Topographic</option>
+          <option value="esri_world_street">Esri Streets</option>
+          <option value="esri_world_imagery_labels">Esri Imagery + Labels</option>
           <option value="esri_world_topo">Esri Topo</option>
           <option value="carto_voyager">CARTO Voyager</option>
           <option value="carto_light">CARTO Light</option>
@@ -1928,6 +1932,7 @@ function renderWaterAnalysisOverlay() {
     opacity,
     { fixedRange }
   );
+  setActorRenderLift(actor, WATER_ANALYSIS_RENDER_LIFT);
   if (lineWidth !== null) actor.getProperty().setLineWidth?.(lineWidth);
   state.actors.waterAnalysis = actor;
   state.scalarInfo.waterAnalysis = scalarInfo;
@@ -2070,11 +2075,15 @@ const MAXIMUM_VELOCITY_DISPLAY_PERCENTILE = 99.5;
 const WATER_GLOBAL_STATS_PERCENTILE_FALLBACK = 99.9;
 const WATER_GLOBAL_STATS_BINS = 4096;
 const MAP_TILE_SIZE = 256;
-const MAP_MAX_TILE_COUNT = 256;
+const MAP_MAX_TILE_COUNT = 384;
 const MAP_MIN_ZOOM = 7;
-const MAP_MAX_ZOOM = 13;
+const MAP_MAX_ZOOM = 19;
 const MAP_TILE_CONCURRENCY = 8;
-const MAP_OVERLAY_LIFT = 0.02;
+const MAP_OVERLAY_LIFT = 0.60;
+const MAP_TEXTURE_INTERPOLATE = false;
+const WATER_RENDER_LIFT = 0.90;
+const WATER_ANALYSIS_RENDER_LIFT = 1.00;
+const LANDSLIDE_RENDER_LIFT = 1.25;
 const LANDSLIDE_COLOR_STOPS = {
   hm: MAGMA_COLOR_STOPS,
   m: MAGMA_COLOR_STOPS,
@@ -2082,32 +2091,60 @@ const LANDSLIDE_COLOR_STOPS = {
 };
 
 const MAP_TILE_PROVIDERS = {
+  opentopomap: {
+    label: 'OpenStreetMap Topographic (OpenTopoMap)',
+    url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+    subdomains: ['a', 'b', 'c'],
+    minZoom: 0,
+    maxZoom: 17,
+    attribution: 'Map data © OpenStreetMap contributors; style © OpenTopoMap (CC-BY-SA)',
+  },
   esri_world_street: {
     label: 'Esri World Street Map',
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
+    minZoom: 0,
+    maxZoom: 19,
     attribution: 'Tiles © Esri',
+  },
+  esri_world_imagery_labels: {
+    label: 'Esri World Imagery + Labels',
+    layers: [
+      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+    ],
+    minZoom: 0,
+    maxZoom: 19,
+    attribution: 'Imagery and labels © Esri',
   },
   esri_world_topo: {
     label: 'Esri World Topographic Map',
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
+    minZoom: 0,
+    maxZoom: 19,
     attribution: 'Tiles © Esri',
   },
   carto_voyager: {
     label: 'CARTO Voyager',
     url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png',
     subdomains: ['a', 'b', 'c', 'd'],
+    minZoom: 0,
+    maxZoom: 20,
     attribution: 'Tiles © CARTO, © OpenStreetMap contributors',
   },
   carto_light: {
     label: 'CARTO Light',
     url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
     subdomains: ['a', 'b', 'c', 'd'],
+    minZoom: 0,
+    maxZoom: 20,
     attribution: 'Tiles © CARTO, © OpenStreetMap contributors',
   },
   osm_standard: {
     label: 'OpenStreetMap',
     url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
     subdomains: ['a', 'b', 'c'],
+    minZoom: 0,
+    maxZoom: 19,
     attribution: 'Tiles © OpenStreetMap contributors',
   },
 };
@@ -2268,6 +2305,22 @@ function formatRange(range) {
 function setLegendReadout(id, text) {
   const el = document.getElementById(id);
   if (el) el.textContent = text;
+}
+
+function getTerrainProjectionLabel() {
+  const crs = state.caseInfo?.processing?.crs;
+  const epsg = Number(crs?.epsg);
+  if (Number.isFinite(epsg)) return `EPSG:${epsg}`;
+  if (crs?.name) return String(crs.name);
+  return null;
+}
+
+function updateTerrainLegendReadout() {
+  const projection = getTerrainProjectionLabel();
+  setLegendReadout(
+    'terrain-scalar-readout',
+    projection ? `projection ${projection}` : 'projection unavailable'
+  );
 }
 
 function updateWaterLegendReadout(container = null) {
@@ -2534,6 +2587,10 @@ function applyGlobalLighting(property, options = {}) {
   property.setSpecularPower?.(8.0);
 }
 
+function setActorRenderLift(actor, lift) {
+  actor?.setPosition?.(0.0, 0.0, lift);
+}
+
 function createSolidActor(polyData, color, opacity) {
   const mapper = vtkMapper.newInstance();
   mapper.setInputData(polyData);
@@ -2699,20 +2756,44 @@ function tileCountForBounds(bounds) {
   return Math.max(0, bounds.maxX - bounds.minX + 1) * Math.max(0, bounds.maxY - bounds.minY + 1);
 }
 
-function chooseMapZoom(bbox) {
-  let bestZoom = MAP_MIN_ZOOM;
-  for (let zoom = MAP_MIN_ZOOM; zoom <= MAP_MAX_ZOOM; zoom += 1) {
-    if (tileCountForBounds(tileBoundsForBbox(bbox, zoom)) <= MAP_MAX_TILE_COUNT) {
+function finiteInteger(value, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.round(number) : fallback;
+}
+
+function getProviderMinZoom(provider) {
+  return Math.max(0, finiteInteger(provider?.minZoom, MAP_MIN_ZOOM));
+}
+
+function getProviderMaxZoom(provider) {
+  const providerMax = finiteInteger(provider?.maxZoom, MAP_MAX_ZOOM);
+  return Math.max(getProviderMinZoom(provider), Math.min(MAP_MAX_ZOOM, providerMax));
+}
+
+function getProviderMaxTileCount(provider) {
+  return Math.max(1, finiteInteger(provider?.maxTileCount, MAP_MAX_TILE_COUNT));
+}
+
+function chooseMapZoom(bbox, provider = null) {
+  const minZoom = getProviderMinZoom(provider);
+  const maxZoom = getProviderMaxZoom(provider);
+  const maxTileCount = getProviderMaxTileCount(provider);
+  let bestZoom = minZoom;
+  for (let zoom = minZoom; zoom <= maxZoom; zoom += 1) {
+    if (tileCountForBounds(tileBoundsForBbox(bbox, zoom)) <= maxTileCount) {
       bestZoom = zoom;
     }
   }
   return bestZoom;
 }
 
-function formatMapTileUrl(provider, z, x, y) {
+function formatMapTileUrl(provider, z, x, y, template = provider.url) {
+  if (!template) {
+    throw new Error(`Map provider ${provider.label ?? 'unknown'} does not use URL templates.`);
+  }
   const subdomains = provider.subdomains ?? [''];
   const s = subdomains[Math.abs(x + y) % subdomains.length];
-  return provider.url
+  return template
     .replace('{s}', s)
     .replace('{z}', String(z))
     .replace('{x}', String(x))
@@ -2745,47 +2826,59 @@ async function runWithConcurrency(items, limit, worker) {
 async function buildMapMosaicForProvider(providerId, bbox, zoom) {
   const provider = MAP_TILE_PROVIDERS[providerId];
   if (!provider) throw new Error(`Unknown map provider: ${providerId}`);
+  const layerTemplates = provider.layers ?? (provider.url ? [provider.url] : []);
+  if (layerTemplates.length === 0) throw new Error(`Map provider ${provider.label ?? providerId} has no tile URL templates.`);
   const bounds = tileBoundsForBbox(bbox, zoom);
   const tileColumns = bounds.maxX - bounds.minX + 1;
   const tileRows = bounds.maxY - bounds.minY + 1;
+  const tileWidth = MAP_TILE_SIZE;
+  const tileHeight = MAP_TILE_SIZE;
   const canvas = document.createElement('canvas');
-  canvas.width = tileColumns * MAP_TILE_SIZE;
-  canvas.height = tileRows * MAP_TILE_SIZE;
+  canvas.width = tileColumns * tileWidth;
+  canvas.height = tileRows * tileHeight;
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
   if (!ctx) throw new Error('Canvas 2D context is unavailable for map overlay.');
 
   const jobs = [];
   for (let ty = bounds.minY; ty <= bounds.maxY; ty += 1) {
     for (let tx = bounds.minX; tx <= bounds.maxX; tx += 1) {
-      jobs.push({ tx, ty, url: formatMapTileUrl(provider, zoom, tx, ty) });
+      jobs.push({
+        tx,
+        ty,
+        urls: layerTemplates.map((template) => formatMapTileUrl(provider, zoom, tx, ty, template)),
+      });
     }
   }
 
   await runWithConcurrency(jobs, MAP_TILE_CONCURRENCY, async (job) => {
-    const image = await loadTileImage(job.url);
-    ctx.drawImage(
-      image,
-      (job.tx - bounds.minX) * MAP_TILE_SIZE,
-      (job.ty - bounds.minY) * MAP_TILE_SIZE,
-      MAP_TILE_SIZE,
-      MAP_TILE_SIZE
-    );
+    for (const url of job.urls) {
+      const image = await loadTileImage(url);
+      ctx.drawImage(
+        image,
+        (job.tx - bounds.minX) * tileWidth,
+        (job.ty - bounds.minY) * tileHeight,
+        tileWidth,
+        tileHeight
+      );
+    }
   });
 
-  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  ctx.getImageData(0, 0, 1, 1);
   return {
     provider,
     bounds,
     zoom,
+    tileWidth,
+    tileHeight,
     width: canvas.width,
     height: canvas.height,
-    data: imageData.data,
+    canvas,
   };
 }
 
 async function buildMapMosaic(bbox, zoom) {
   const preferred = state.mapOverlay.providerId;
-  const providerIds = [preferred, 'esri_world_street', 'carto_voyager', 'esri_world_topo', 'carto_light', 'osm_standard']
+  const providerIds = [preferred, 'opentopomap', 'esri_world_street', 'esri_world_imagery_labels', 'carto_voyager', 'esri_world_topo', 'carto_light', 'osm_standard']
     .filter((value, index, values) => value && values.indexOf(value) === index);
   let lastError = null;
   for (const providerId of providerIds) {
@@ -2799,25 +2892,22 @@ async function buildMapMosaic(bbox, zoom) {
   throw lastError ?? new Error('No map provider could be loaded.');
 }
 
-function sampleMapColor(mosaic, lon, lat, target, targetOffset) {
-  const pixel = lonLatToTilePixel(lon, lat, mosaic.zoom);
-  const px = Math.min(
-    mosaic.width - 1,
-    Math.max(0, Math.round(pixel.x - mosaic.bounds.minX * MAP_TILE_SIZE))
-  );
-  const py = Math.min(
-    mosaic.height - 1,
-    Math.max(0, Math.round(pixel.y - mosaic.bounds.minY * MAP_TILE_SIZE))
-  );
-  const source = (py * mosaic.width + px) * 4;
-  const alpha = mosaic.data[source + 3] / 255.0;
-  const fallback = 155;
-  target[targetOffset] = Math.round((mosaic.data[source] ?? fallback) * alpha + fallback * (1.0 - alpha));
-  target[targetOffset + 1] = Math.round((mosaic.data[source + 1] ?? fallback) * alpha + fallback * (1.0 - alpha));
-  target[targetOffset + 2] = Math.round((mosaic.data[source + 2] ?? fallback) * alpha + fallback * (1.0 - alpha));
+function clamp01(value) {
+  return Math.min(1.0, Math.max(0.0, value));
 }
 
-function createMapActorFromTerrain(terrain, colors) {
+function mapTextureCoordinate(mosaic, lon, lat) {
+  const pixel = lonLatToTilePixel(lon, lat, mosaic.zoom);
+  const tileWidth = Number(mosaic.tileWidth) || MAP_TILE_SIZE;
+  const tileHeight = Number(mosaic.tileHeight) || MAP_TILE_SIZE;
+  const px = (pixel.x - mosaic.bounds.minX * MAP_TILE_SIZE) * (tileWidth / MAP_TILE_SIZE);
+  const py = (pixel.y - mosaic.bounds.minY * MAP_TILE_SIZE) * (tileHeight / MAP_TILE_SIZE);
+  const u = clamp01(px / Math.max(1, mosaic.width - 1));
+  const v = clamp01(1.0 - py / Math.max(1, mosaic.height - 1));
+  return [u, v];
+}
+
+function createMapActorFromTerrain(terrain, mosaic) {
   const sourcePoints = terrain?.getPoints?.()?.getData?.();
   const sourcePolys = terrain?.getPolys?.()?.getData?.();
   if (!sourcePoints || !sourcePolys) {
@@ -2826,6 +2916,17 @@ function createMapActorFromTerrain(terrain, colors) {
 
   const pointValues = new Float32Array(sourcePoints);
   for (let i = 2; i < pointValues.length; i += 3) pointValues[i] += MAP_OVERLAY_LIFT;
+  const crs = getMapCrsConfig();
+  const pointCount = Math.floor(sourcePoints.length / 3);
+  const tcoordValues = new Float32Array(pointCount * 2);
+  for (let pointId = 0; pointId < pointCount; pointId += 1) {
+    const sourceBase = pointId * 3;
+    const targetBase = pointId * 2;
+    const { lon, lat } = utmToLonLat(sourcePoints[sourceBase], sourcePoints[sourceBase + 1], crs);
+    const [u, v] = mapTextureCoordinate(mosaic, lon, lat);
+    tcoordValues[targetBase] = u;
+    tcoordValues[targetBase + 1] = v;
+  }
 
   const points = vtkPoints.newInstance();
   points.setData(pointValues, 3);
@@ -2835,27 +2936,31 @@ function createMapActorFromTerrain(terrain, colors) {
   const polyData = vtkPolyData.newInstance();
   polyData.setPoints(points);
   polyData.setPolys(polys);
-  const colorArray = vtkDataArray.newInstance({
-    name: 'basemap_rgb',
-    numberOfComponents: 3,
-    values: colors,
+  const tcoordArray = vtkDataArray.newInstance({
+    name: 'basemap_tcoords',
+    numberOfComponents: 2,
+    values: tcoordValues,
   });
-  polyData.getPointData().addArray(colorArray);
-  polyData.getPointData().setActiveScalars?.('basemap_rgb');
+  polyData.getPointData().setTCoords?.(tcoordArray);
 
   const mapper = vtkMapper.newInstance();
   mapper.setInputData(polyData);
-  mapper.setScalarVisibility(true);
-  mapper.setScalarModeToUsePointFieldData?.();
-  mapper.setColorByArrayName?.('basemap_rgb');
-  mapper.setColorModeToDirectScalars?.();
-  mapper.setInterpolateScalarsBeforeMapping?.(true);
+  mapper.setScalarVisibility(false);
+
+  const texture = vtkTexture.newInstance({
+    interpolate: MAP_TEXTURE_INTERPOLATE,
+    edgeClamp: true,
+  });
+  texture.setCanvas(mosaic.canvas);
 
   const actor = vtkActor.newInstance();
   actor.setMapper(mapper);
+  actor.addTexture(texture);
   const property = actor.getProperty();
-  property.setOpacity(0.94);
-  applyGlobalLighting(property, { ambient: 0.68, diffuse: 0.42, specular: 0.0 });
+  property.setColor(1.0, 1.0, 1.0);
+  property.setOpacity(1.0);
+  property.setLighting?.(false);
+  applyGlobalLighting(property, { ambient: 0.96, diffuse: 0.08, specular: 0.0 });
   return actor;
 }
 
@@ -2865,19 +2970,12 @@ async function buildMapOverlayActor(container) {
   if (!terrain || !pointValues) throw new Error('Terrain must be loaded before the map overlay.');
   const bbox = terrainLonLatBbox(terrain);
   if (!bbox) throw new Error('Could not determine terrain bounds for map overlay.');
-  const zoom = chooseMapZoom(bbox);
-  setStatus(container, `Loading online basemap tiles (zoom ${zoom})...`);
+  const provider = MAP_TILE_PROVIDERS[state.mapOverlay.providerId];
+  const zoom = chooseMapZoom(bbox, provider);
+  setStatus(container, `Loading ${provider?.label ?? 'online basemap'} tiles (zoom ${zoom})...`);
   const mosaic = await buildMapMosaic(bbox, zoom);
-  const crs = getMapCrsConfig();
-  const pointCount = Math.floor(pointValues.length / 3);
-  const colors = new Uint8Array(pointCount * 3);
-  for (let pointId = 0; pointId < pointCount; pointId += 1) {
-    const base = pointId * 3;
-    const { lon, lat } = utmToLonLat(pointValues[base], pointValues[base + 1], crs);
-    sampleMapColor(mosaic, lon, lat, colors, base);
-  }
   state.mapOverlay.attribution = mosaic.provider.attribution;
-  return createMapActorFromTerrain(terrain, colors);
+  return createMapActorFromTerrain(terrain, mosaic);
 }
 
 function syncMapOverlayButton(container) {
@@ -2909,6 +3007,7 @@ function removeMapOverlayActor() {
 async function reloadMapOverlay(container) {
   removeMapOverlayActor();
   state.mapOverlay.enabled = true;
+  syncMapOverlayButton(container);
   await toggleMapOverlay(container);
 }
 
@@ -2951,7 +3050,6 @@ async function toggleMapOverlay(container) {
     syncMapOverlayButton(container);
   }
 }
-
 
 function getPointScalarArray(polyData, name) {
   const pointData = polyData?.getPointData?.();
@@ -3300,6 +3398,8 @@ function addActors(terrain, water, landslide) {
     [0.90, 0.32, 0.12],
     0.92
   );
+  setActorRenderLift(waterActor, WATER_RENDER_LIFT);
+  setActorRenderLift(landslideActor, LANDSLIDE_RENDER_LIFT);
 
   state.actors.terrain = terrainActor;
   state.actors.water = waterActor;
@@ -3313,6 +3413,7 @@ function addActors(terrain, water, landslide) {
 
   resetCamera();
 
+  updateTerrainLegendReadout();
   updateWaterLegendReadout();
   updateLandslideLegendReadout('hm');
 
@@ -3500,6 +3601,7 @@ function setupControls(container) {
       }
     });
   }
+  syncMapOverlayButton(container);
 
   container.querySelector('#toggle-water')?.addEventListener('change', (event) => {
     syncWaterActorVisibility();
