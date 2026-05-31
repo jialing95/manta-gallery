@@ -24,12 +24,23 @@ The water layer is filtered by a water-like solid-fraction cutoff.
 ### Water analysis overlays
 
 The browser can isolate current-frame inland inundation depth where `b >= 0`
-and show water-velocity arrows. Both overlays use the active water-like
-solid-fraction cutoff. Cumulative maximum inundation depth and maximum wave
-velocity are computed on demand from the first frame through the paused frame.
+and show water-velocity arrows. Both overlays use the active `Water m` cutoff as
+their material filter; velocity is not separated by `b`. Cumulative maximum
+inundation depth and maximum wave velocity are computed on demand from the first
+frame through the paused frame.
 Velocity arrows use `turbo`, cell-aware lengths, and spatial sampling across the
 water region. Maximum velocity uses `cmocean.speed` with a `99.5`th-percentile
 saturation limit.
+
+### Online map overlay
+
+The optional `Map` button fetches online map tiles on demand and drapes the
+sampled colors onto the static terrain mesh. The map source selector currently
+offers Esri Streets, Esri Topo, CARTO Voyager, CARTO Light, and OpenStreetMap;
+Esri Streets is the default because its labels are generally clearer in English.
+The current Aqaba export declares `EPSG:32637` (`WGS 84 / UTM zone 37N`), and the
+browser samples tiles through a per-point `UTM -> Web Mercator` transform to
+avoid visible basemap offset.
 
 ### Landslide material
 

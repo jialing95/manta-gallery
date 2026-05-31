@@ -27,6 +27,7 @@ const state = {
   interactor: null,
   actors: {
     terrain: null,
+    map: null,
     water: null,
     landslide: null,
     waterAnalysis: null,
@@ -70,6 +71,20 @@ const state = {
   mThresholds: {
     waterMax: 0.30,
     landslideMin: -0.01,
+  },
+  waterGlobalStats: {
+    threshold: null,
+    range: null,
+    rawRange: null,
+    token: 0,
+    isComputing: false,
+  },
+  mapOverlay: {
+    enabled: false,
+    loading: false,
+    token: 0,
+    providerId: 'esri_world_street',
+    attribution: '',
   },
   amrCache: new Map(),
   amrVisible: false,
@@ -368,7 +383,8 @@ function injectCss() {
     .manta-colorbar-ticks-classified {
       position: relative;
       display: block;
-      height: 28px;
+      height: 34px;
+      font-size: 18px;
     }
 
     .manta-colorbar-tick-classified {
@@ -379,14 +395,36 @@ function injectCss() {
       text-align: center;
     }
 
+    .manta-colorbar-tick-classified::before {
+      content: '';
+      position: absolute;
+      left: 50%;
+      top: -8px;
+      width: 2px;
+      height: 7px;
+      transform: translateX(-50%);
+      background: rgba(31, 35, 40, 0.48);
+      border-radius: 999px;
+    }
+
     .manta-colorbar-tick-classified:first-child {
       transform: translateX(0);
       text-align: left;
     }
 
+    .manta-colorbar-tick-classified:first-child::before {
+      left: 0;
+      transform: none;
+    }
+
     .manta-colorbar-tick-classified:last-child {
       transform: translateX(-100%);
       text-align: right;
+    }
+
+    .manta-colorbar-tick-classified:last-child::before {
+      left: 100%;
+      transform: translateX(-100%);
     }
 
     .manta-colorbar-ticks span:nth-child(2) {
@@ -493,6 +531,17 @@ function setupDom(container) {
     <div class="manta-viewer-controls">
       <div class="manta-viewer-controls-row">
       <label><input type="checkbox" id="toggle-terrain" checked> Terrain</label>
+      <button id="toggle-map" type="button" aria-pressed="false" title="Fetch an online topographic basemap and drape it on the terrain mesh.">Map</button>
+      <label title="Choose the online basemap provider used by the Map button.">
+        Map source:
+        <select id="map-provider">
+          <option value="esri_world_street" selected>Esri Streets</option>
+          <option value="esri_world_topo">Esri Topo</option>
+          <option value="carto_voyager">CARTO Voyager</option>
+          <option value="carto_light">CARTO Light</option>
+          <option value="osm_standard">OpenStreetMap</option>
+        </select>
+      </label>
       <label><input type="checkbox" id="toggle-water" checked> Water</label>
       <label><input type="checkbox" id="toggle-landslide" checked> Landslide</label>
       <label><input type="checkbox" id="toggle-amr"> AMR outlines</label>
@@ -528,7 +577,7 @@ function setupDom(container) {
       </div>
 
       <div class="manta-viewer-controls-row manta-analysis-controls" aria-label="Water analysis overlays">
-        <label title="Show the current-frame inland water extent where b ≥ 0, filtered by the Water m threshold.">
+        <label title="Show current-frame inundation depth, filtered by the Water m threshold.">
           <input type="checkbox" id="toggle-inundation"> Inundation
         </label>
         <button id="show-max-inundation" type="button" aria-pressed="false" title="Accumulate maximum inundation depth from the first frame through the paused current frame.">
@@ -867,10 +916,49 @@ function getWaterStatisticsLabel() {
   return state.caseInfo?.layers?.water?.colorbar?.range_label ?? 'full';
 }
 
+function getWaterStatisticsPercentile() {
+  const percentile = Number(state.caseInfo?.layers?.water?.colorbar?.statistics?.abs_percentile);
+  return Number.isFinite(percentile) ? percentile : WATER_GLOBAL_STATS_PERCENTILE_FALLBACK;
+}
+
+function getCurrentWaterMThreshold() {
+  const threshold = Number(state.mThresholds.waterMax);
+  return Number.isFinite(threshold) ? threshold : 0.30;
+}
+
+function getDefaultWaterMThreshold() {
+  const threshold = Number(state.caseInfo?.layers?.water?.default_m);
+  return Number.isFinite(threshold) ? threshold : 0.30;
+}
+
+function thresholdsMatch(a, b) {
+  const left = Number(a);
+  const right = Number(b);
+  return Number.isFinite(left) && Number.isFinite(right) && Math.abs(left - right) <= 1e-9;
+}
+
+function getManifestWaterGlobalRangeForThreshold(threshold) {
+  if (!thresholdsMatch(threshold, getDefaultWaterMThreshold())) return null;
+  return finitePairRange(state.caseInfo?.layers?.water?.colorbar?.statistics?.ocean_default_m_raw_range)
+    ?? finitePairRange(state.caseInfo?.layers?.water?.colorbar?.statistics?.ocean_default_m_range)
+    ?? finitePairRange(state.caseInfo?.layers?.water?.colorbar?.statistics?.raw_exported_range);
+}
+
+function getManifestWaterDisplayRangeForThreshold(threshold) {
+  if (!thresholdsMatch(threshold, getDefaultWaterMThreshold())) return null;
+  return finitePairRange(state.caseInfo?.layers?.water?.colorbar?.statistics?.ocean_default_m_display_range)
+    ?? getWaterStatisticsRange();
+}
+
 function getWaterGlobalRange() {
-  return finitePairRange(
-    state.caseInfo?.layers?.water?.colorbar?.statistics?.raw_exported_range
-  ) ?? getWaterStatisticsRange();
+  const threshold = getCurrentWaterMThreshold();
+  if (
+    thresholdsMatch(state.waterGlobalStats.threshold, threshold)
+    && finitePairRange(state.waterGlobalStats.rawRange)
+  ) {
+    return state.waterGlobalStats.rawRange;
+  }
+  return getManifestWaterGlobalRangeForThreshold(threshold);
 }
 
 function getLandslideGlobalRange(scalarName) {
@@ -880,6 +968,17 @@ function getLandslideGlobalRange(scalarName) {
 }
 
 function getWaterDisplayRange() {
+  const threshold = getCurrentWaterMThreshold();
+  if (
+    thresholdsMatch(state.waterGlobalStats.threshold, threshold)
+    && finitePairRange(state.waterGlobalStats.range)
+  ) {
+    return symmetricRangeFromRange(state.waterGlobalStats.range);
+  }
+
+  const manifestDisplayRange = getManifestWaterDisplayRangeForThreshold(threshold);
+  if (manifestDisplayRange) return symmetricRangeFromRange(manifestDisplayRange);
+
   const configuredRange = state.caseInfo?.layers?.water?.colorbar?.display_range;
   const cleanConfiguredRange = finitePairRange(configuredRange);
   if (cleanConfiguredRange) return symmetricRangeFromRange(cleanConfiguredRange);
@@ -1178,6 +1277,22 @@ function compactCellPassesM(
     && keepPoint(m[quads[base + 3]]);
 }
 
+function compactCellPassesMThreshold(template, frameArrays, cellIndex, threshold) {
+  if (!compactBitIsSet(frameArrays.valid_cells, cellIndex)) return false;
+  const base = cellIndex * 4;
+  const quads = template.quads;
+  const m = frameArrays.m;
+  const waterMax = Number.isFinite(threshold) ? threshold : getDefaultWaterMThreshold();
+  return Number.isFinite(m[quads[base]])
+    && Number.isFinite(m[quads[base + 1]])
+    && Number.isFinite(m[quads[base + 2]])
+    && Number.isFinite(m[quads[base + 3]])
+    && m[quads[base]] <= waterMax
+    && m[quads[base + 1]] <= waterMax
+    && m[quads[base + 2]] <= waterMax
+    && m[quads[base + 3]] <= waterMax;
+}
+
 function compactPolysFromCellPredicate(template, keepCell) {
   const quads = template.quads;
   const cellCount = Math.floor(quads.length / 4);
@@ -1282,10 +1397,13 @@ function getWaterDryTolerance() {
 }
 
 function getWaterCellPredicate(frameArrays, pointPredicate = null) {
+  return getWaterCellPredicateForThreshold(frameArrays, getCurrentWaterMThreshold(), pointPredicate);
+}
+
+function getWaterCellPredicateForThreshold(frameArrays, threshold, pointPredicate = null) {
   const template = state.compact.templates.water;
-  const keepM = compactMPointPredicate('water');
   return (cellIndex) => {
-    if (!compactCellPassesM(template, frameArrays, cellIndex, keepM)) return false;
+    if (!compactCellPassesMThreshold(template, frameArrays, cellIndex, threshold)) return false;
     if (!pointPredicate) return true;
     const base = cellIndex * 4;
     const quads = template.quads;
@@ -1333,8 +1451,112 @@ function getCurrentVisibleWaveRange() {
   if (!waterAnalysisIsAvailable()) return state.scalarInfo.water?.rawRange ?? null;
   const template = state.compact.templates.water;
   const frame = state.compact.currentFrames.water;
-  const pointMask = compactPointMaskFromCellPredicate(template, getWaterCellPredicate(frame));
+  const seaLevel = getSeaLevel();
+  const pointMask = compactPointMaskFromCellPredicate(
+    template,
+    getWaterCellPredicate(frame, (pointId) => {
+      const z = Number(frame.z[pointId]);
+      const h = Number(frame.h[pointId]);
+      return Number.isFinite(z) && Number.isFinite(h) && z - h <= seaLevel;
+    })
+  );
   return finiteMaskedRange(frame.wave_amplitude, pointMask);
+}
+
+function resetWaterGlobalStats() {
+  state.waterGlobalStats.threshold = null;
+  state.waterGlobalStats.range = null;
+  state.waterGlobalStats.rawRange = null;
+  state.waterGlobalStats.isComputing = false;
+  state.waterGlobalStats.token += 1;
+}
+
+function percentileRangeFromAbsHistogram(histogram, totalCount, maxAbs, percentile) {
+  if (!Number.isFinite(totalCount) || totalCount <= 0 || !Number.isFinite(maxAbs) || maxAbs <= 0.0) {
+    return null;
+  }
+  const target = Math.max(1, Math.ceil((Math.min(100.0, Math.max(0.0, percentile)) / 100.0) * totalCount));
+  let cumulative = 0;
+  for (let bin = 0; bin < histogram.length; bin += 1) {
+    cumulative += histogram[bin];
+    if (cumulative >= target) {
+      const limit = Math.max(maxAbs * ((bin + 1) / histogram.length), 1e-12);
+      return [-limit, limit];
+    }
+  }
+  return [-maxAbs, maxAbs];
+}
+
+async function computeWaterGlobalRangeForThreshold(threshold, container = null) {
+  if (!state.compact.enabled || !state.compact.templates.water || !state.caseInfo) return null;
+
+  const token = ++state.waterGlobalStats.token;
+  state.waterGlobalStats.isComputing = true;
+  state.waterGlobalStats.threshold = threshold;
+  state.waterGlobalStats.range = null;
+  state.waterGlobalStats.rawRange = null;
+
+  const rawRange = finitePairRange(state.caseInfo?.layers?.water?.colorbar?.statistics?.raw_exported_range)
+    ?? finitePairRange(state.caseInfo?.layers?.water?.colorbar?.statistics?.ocean_default_m_raw_range)
+    ?? getWaterStatisticsRange()
+    ?? [-1.0, 1.0];
+  const histogramMaxAbs = Math.max(Math.abs(rawRange[0]), Math.abs(rawRange[1]), 1.0e-12);
+  const histogram = new Uint32Array(WATER_GLOBAL_STATS_BINS);
+  const template = state.compact.templates.water;
+  const pointCount = template.pointValues.length / 3;
+  const frameCount = getFrameCount(state.caseInfo);
+  const percentile = getWaterStatisticsPercentile();
+  const seaLevel = getSeaLevel();
+
+  let count = 0;
+  let minValue = Number.POSITIVE_INFINITY;
+  let maxValue = Number.NEGATIVE_INFINITY;
+
+  for (let frameIndex = 0; frameIndex < frameCount; frameIndex += 1) {
+    if (token !== state.waterGlobalStats.token) return null;
+    if (container && (frameIndex === 0 || frameIndex === frameCount - 1 || frameIndex % 12 === 0)) {
+      setStatus(container, `Computing ocean wave-height statistics for Water m≤${threshold} (${frameIndex + 1}/${frameCount})...`);
+    }
+    const frame = await readWaterFrameForAnalysis(frameIndex);
+    const pointMask = compactPointMaskFromCellPredicate(
+      template,
+      getWaterCellPredicateForThreshold(frame, threshold)
+    );
+    for (let pointId = 0; pointId < pointCount; pointId += 1) {
+      if (!pointMask[pointId]) continue;
+      const value = Number(frame.wave_amplitude[pointId]);
+      const z = Number(frame.z[pointId]);
+      const h = Number(frame.h[pointId]);
+      if (!Number.isFinite(value) || !Number.isFinite(z) || !Number.isFinite(h)) continue;
+      const b = z - h;
+      if (!(b <= seaLevel)) continue;
+      minValue = Math.min(minValue, value);
+      maxValue = Math.max(maxValue, value);
+      const absValue = Math.abs(value);
+      const bin = Math.min(
+        histogram.length - 1,
+        Math.max(0, Math.floor((absValue / histogramMaxAbs) * histogram.length))
+      );
+      histogram[bin] += 1;
+      count += 1;
+    }
+  }
+
+  if (token !== state.waterGlobalStats.token) return null;
+
+  const range = percentileRangeFromAbsHistogram(histogram, count, histogramMaxAbs, percentile);
+  state.waterGlobalStats.isComputing = false;
+  state.waterGlobalStats.threshold = threshold;
+  state.waterGlobalStats.range = range;
+  state.waterGlobalStats.rawRange = Number.isFinite(minValue) && Number.isFinite(maxValue)
+    ? [minValue, maxValue]
+    : null;
+  updateWaterLegendReadout(container);
+
+  if (range && thresholdsMatch(threshold, getCurrentWaterMThreshold()) && state.actors.water) {
+    updateCurrentFrameActors();
+  }
+  return range;
 }
 
 function maskedScalarValues(values, pointMask) {
@@ -1845,10 +2067,49 @@ const VELOCITY_ARROW_SCALE = 10.0;
 const VELOCITY_ARROW_MAX_COUNT = 20000;
 const VELOCITY_ARROW_MIN_SPEED = 0.01;
 const MAXIMUM_VELOCITY_DISPLAY_PERCENTILE = 99.5;
+const WATER_GLOBAL_STATS_PERCENTILE_FALLBACK = 99.9;
+const WATER_GLOBAL_STATS_BINS = 4096;
+const MAP_TILE_SIZE = 256;
+const MAP_MAX_TILE_COUNT = 256;
+const MAP_MIN_ZOOM = 7;
+const MAP_MAX_ZOOM = 13;
+const MAP_TILE_CONCURRENCY = 8;
+const MAP_OVERLAY_LIFT = 0.02;
 const LANDSLIDE_COLOR_STOPS = {
   hm: MAGMA_COLOR_STOPS,
   m: MAGMA_COLOR_STOPS,
   db: MAGMA_COLOR_STOPS,
+};
+
+const MAP_TILE_PROVIDERS = {
+  esri_world_street: {
+    label: 'Esri World Street Map',
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
+    attribution: 'Tiles © Esri',
+  },
+  esri_world_topo: {
+    label: 'Esri World Topographic Map',
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
+    attribution: 'Tiles © Esri',
+  },
+  carto_voyager: {
+    label: 'CARTO Voyager',
+    url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png',
+    subdomains: ['a', 'b', 'c', 'd'],
+    attribution: 'Tiles © CARTO, © OpenStreetMap contributors',
+  },
+  carto_light: {
+    label: 'CARTO Light',
+    url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+    subdomains: ['a', 'b', 'c', 'd'],
+    attribution: 'Tiles © CARTO, © OpenStreetMap contributors',
+  },
+  osm_standard: {
+    label: 'OpenStreetMap',
+    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    subdomains: ['a', 'b', 'c'],
+    attribution: 'Tiles © OpenStreetMap contributors',
+  },
 };
 
 const LANDSLIDE_COLORBAR_TITLES = {
@@ -2009,12 +2270,50 @@ function setLegendReadout(id, text) {
   if (el) el.textContent = text;
 }
 
-function updateWaterLegendReadout() {
+function updateWaterLegendReadout(container = null) {
+  const threshold = getCurrentWaterMThreshold();
+  const manifestRange = getManifestWaterGlobalRangeForThreshold(threshold);
+  if (
+    manifestRange
+    && !state.waterGlobalStats.isComputing
+    && !thresholdsMatch(state.waterGlobalStats.threshold, threshold)
+  ) {
+    state.waterGlobalStats.threshold = threshold;
+    state.waterGlobalStats.rawRange = manifestRange;
+    state.waterGlobalStats.range = getManifestWaterDisplayRangeForThreshold(threshold);
+  }
+
   const globalRange = getWaterGlobalRange();
+  const shouldCompute =
+    state.compact.enabled
+    && container
+    && !manifestRange
+    && !state.waterGlobalStats.isComputing
+    && !(
+      thresholdsMatch(state.waterGlobalStats.threshold, threshold)
+      && finitePairRange(state.waterGlobalStats.rawRange)
+    );
+
   setLegendReadout(
     'water-scalar-readout',
-    globalRange ? `global ${formatRange(globalRange)}` : 'global unavailable'
+    shouldCompute
+      ? `global computing for m≤${threshold}`
+      : state.waterGlobalStats.isComputing && thresholdsMatch(state.waterGlobalStats.threshold, threshold)
+      ? `global computing for m≤${threshold}`
+      : globalRange
+        ? `global ${formatRange(globalRange)}`
+        : 'global unavailable'
   );
+
+  if (shouldCompute) {
+    computeWaterGlobalRangeForThreshold(threshold, container).catch((error) => {
+      console.warn('[MANTA Gallery] failed to compute water global statistics:', error);
+      if (thresholdsMatch(state.waterGlobalStats.threshold, threshold)) {
+        state.waterGlobalStats.isComputing = false;
+        setLegendReadout('water-scalar-readout', globalRange ? `global ${formatRange(globalRange)}` : 'global unavailable');
+      }
+    });
+  }
 }
 
 function updateLandslideLegendReadout(scalarName) {
@@ -2225,6 +2524,16 @@ function applyScalarToActor({
   };
 }
 
+function applyGlobalLighting(property, options = {}) {
+  const ambient = Number.isFinite(options.ambient) ? options.ambient : 0.58;
+  const diffuse = Number.isFinite(options.diffuse) ? options.diffuse : 0.52;
+  const specular = Number.isFinite(options.specular) ? options.specular : 0.04;
+  property.setAmbient?.(ambient);
+  property.setDiffuse?.(diffuse);
+  property.setSpecular?.(specular);
+  property.setSpecularPower?.(8.0);
+}
+
 function createSolidActor(polyData, color, opacity) {
   const mapper = vtkMapper.newInstance();
   mapper.setInputData(polyData);
@@ -2236,6 +2545,7 @@ function createSolidActor(polyData, color, opacity) {
   const property = actor.getProperty();
   property.setColor(...color);
   property.setOpacity(opacity);
+  applyGlobalLighting(property);
 
   return actor;
 }
@@ -2259,6 +2569,387 @@ function createScalarActor(
   });
 
   return { actor, scalarInfo };
+}
+
+function getMapCrsConfig() {
+  const crs = state.caseInfo?.processing?.crs ?? {};
+  const code = Number(crs.epsg ?? crs.code ?? 32637);
+  const zoneFromCode = code >= 32601 && code <= 32660
+    ? code - 32600
+    : code >= 32701 && code <= 32760
+      ? code - 32700
+      : null;
+  const zone = Number(crs.utm_zone ?? crs.zone ?? zoneFromCode ?? 37);
+  const northern = code >= 32701 && code <= 32760
+    ? false
+    : String(crs.hemisphere ?? 'N').toUpperCase() !== 'S';
+  if (!Number.isFinite(zone) || zone < 1 || zone > 60) {
+    throw new Error('Map overlay requires a UTM CRS zone in the case manifest.');
+  }
+  return { code, zone, northern };
+}
+
+function utmToLonLat(easting, northing, crsConfig = getMapCrsConfig()) {
+  const a = 6378137.0;
+  const eccSquared = 0.0066943799901413165;
+  const k0 = 0.9996;
+  const eccPrimeSquared = eccSquared / (1.0 - eccSquared);
+  const e1 = (1.0 - Math.sqrt(1.0 - eccSquared)) / (1.0 + Math.sqrt(1.0 - eccSquared));
+
+  const x = Number(easting) - 500000.0;
+  let y = Number(northing);
+  if (!crsConfig.northern) y -= 10000000.0;
+
+  const longOrigin = (crsConfig.zone - 1.0) * 6.0 - 180.0 + 3.0;
+  const m = y / k0;
+  const mu = m / (a * (1.0 - eccSquared / 4.0 - 3.0 * eccSquared ** 2 / 64.0 - 5.0 * eccSquared ** 3 / 256.0));
+
+  const phi1Rad = mu
+    + (3.0 * e1 / 2.0 - 27.0 * e1 ** 3 / 32.0) * Math.sin(2.0 * mu)
+    + (21.0 * e1 ** 2 / 16.0 - 55.0 * e1 ** 4 / 32.0) * Math.sin(4.0 * mu)
+    + (151.0 * e1 ** 3 / 96.0) * Math.sin(6.0 * mu)
+    + (1097.0 * e1 ** 4 / 512.0) * Math.sin(8.0 * mu);
+
+  const sinPhi1 = Math.sin(phi1Rad);
+  const cosPhi1 = Math.cos(phi1Rad);
+  const tanPhi1 = Math.tan(phi1Rad);
+  const n1 = a / Math.sqrt(1.0 - eccSquared * sinPhi1 ** 2);
+  const t1 = tanPhi1 ** 2;
+  const c1 = eccPrimeSquared * cosPhi1 ** 2;
+  const r1 = a * (1.0 - eccSquared) / (1.0 - eccSquared * sinPhi1 ** 2) ** 1.5;
+  const d = x / (n1 * k0);
+
+  const latRad = phi1Rad - (n1 * tanPhi1 / r1) * (
+    d ** 2 / 2.0
+    - (5.0 + 3.0 * t1 + 10.0 * c1 - 4.0 * c1 ** 2 - 9.0 * eccPrimeSquared) * d ** 4 / 24.0
+    + (61.0 + 90.0 * t1 + 298.0 * c1 + 45.0 * t1 ** 2 - 252.0 * eccPrimeSquared - 3.0 * c1 ** 2) * d ** 6 / 720.0
+  );
+  const lonRad = (
+    d
+    - (1.0 + 2.0 * t1 + c1) * d ** 3 / 6.0
+    + (5.0 - 2.0 * c1 + 28.0 * t1 - 3.0 * c1 ** 2 + 8.0 * eccPrimeSquared + 24.0 * t1 ** 2) * d ** 5 / 120.0
+  ) / cosPhi1;
+
+  return {
+    lon: longOrigin + lonRad * 180.0 / Math.PI,
+    lat: latRad * 180.0 / Math.PI,
+  };
+}
+
+function lonLatToTilePixel(lon, lat, zoom) {
+  const clampedLat = Math.min(85.05112878, Math.max(-85.05112878, Number(lat)));
+  const scale = MAP_TILE_SIZE * 2 ** zoom;
+  const sinLat = Math.sin(clampedLat * Math.PI / 180.0);
+  return {
+    x: ((Number(lon) + 180.0) / 360.0) * scale,
+    y: (0.5 - Math.log((1.0 + sinLat) / (1.0 - sinLat)) / (4.0 * Math.PI)) * scale,
+  };
+}
+
+function getPolyDataBounds2d(polyData) {
+  const values = polyData?.getPoints?.()?.getData?.();
+  if (!values) return null;
+  let xmin = Number.POSITIVE_INFINITY;
+  let xmax = Number.NEGATIVE_INFINITY;
+  let ymin = Number.POSITIVE_INFINITY;
+  let ymax = Number.NEGATIVE_INFINITY;
+  for (let i = 0; i < values.length; i += 3) {
+    const x = Number(values[i]);
+    const y = Number(values[i + 1]);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    xmin = Math.min(xmin, x);
+    xmax = Math.max(xmax, x);
+    ymin = Math.min(ymin, y);
+    ymax = Math.max(ymax, y);
+  }
+  return Number.isFinite(xmin) ? { xmin, xmax, ymin, ymax } : null;
+}
+
+function terrainLonLatBbox(polyData) {
+  const bounds = getPolyDataBounds2d(polyData);
+  if (!bounds) return null;
+  const crs = getMapCrsConfig();
+  const corners = [
+    utmToLonLat(bounds.xmin, bounds.ymin, crs),
+    utmToLonLat(bounds.xmax, bounds.ymin, crs),
+    utmToLonLat(bounds.xmax, bounds.ymax, crs),
+    utmToLonLat(bounds.xmin, bounds.ymax, crs),
+  ];
+  return {
+    west: Math.min(...corners.map((p) => p.lon)),
+    east: Math.max(...corners.map((p) => p.lon)),
+    south: Math.min(...corners.map((p) => p.lat)),
+    north: Math.max(...corners.map((p) => p.lat)),
+  };
+}
+
+function tileBoundsForBbox(bbox, zoom) {
+  const nw = lonLatToTilePixel(bbox.west, bbox.north, zoom);
+  const se = lonLatToTilePixel(bbox.east, bbox.south, zoom);
+  const n = 2 ** zoom;
+  return {
+    minX: Math.min(n - 1, Math.max(0, Math.floor(Math.min(nw.x, se.x) / MAP_TILE_SIZE))),
+    maxX: Math.min(n - 1, Math.max(0, Math.floor(Math.max(nw.x, se.x) / MAP_TILE_SIZE))),
+    minY: Math.min(n - 1, Math.max(0, Math.floor(Math.min(nw.y, se.y) / MAP_TILE_SIZE))),
+    maxY: Math.min(n - 1, Math.max(0, Math.floor(Math.max(nw.y, se.y) / MAP_TILE_SIZE))),
+  };
+}
+
+function tileCountForBounds(bounds) {
+  return Math.max(0, bounds.maxX - bounds.minX + 1) * Math.max(0, bounds.maxY - bounds.minY + 1);
+}
+
+function chooseMapZoom(bbox) {
+  let bestZoom = MAP_MIN_ZOOM;
+  for (let zoom = MAP_MIN_ZOOM; zoom <= MAP_MAX_ZOOM; zoom += 1) {
+    if (tileCountForBounds(tileBoundsForBbox(bbox, zoom)) <= MAP_MAX_TILE_COUNT) {
+      bestZoom = zoom;
+    }
+  }
+  return bestZoom;
+}
+
+function formatMapTileUrl(provider, z, x, y) {
+  const subdomains = provider.subdomains ?? [''];
+  const s = subdomains[Math.abs(x + y) % subdomains.length];
+  return provider.url
+    .replace('{s}', s)
+    .replace('{z}', String(z))
+    .replace('{x}', String(x))
+    .replace('{y}', String(y));
+}
+
+function loadTileImage(url) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.crossOrigin = 'anonymous';
+    image.decoding = 'async';
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error(`Failed to load map tile: ${url}`));
+    image.src = url;
+  });
+}
+
+async function runWithConcurrency(items, limit, worker) {
+  let nextIndex = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      await worker(items[index], index);
+    }
+  });
+  await Promise.all(workers);
+}
+
+async function buildMapMosaicForProvider(providerId, bbox, zoom) {
+  const provider = MAP_TILE_PROVIDERS[providerId];
+  if (!provider) throw new Error(`Unknown map provider: ${providerId}`);
+  const bounds = tileBoundsForBbox(bbox, zoom);
+  const tileColumns = bounds.maxX - bounds.minX + 1;
+  const tileRows = bounds.maxY - bounds.minY + 1;
+  const canvas = document.createElement('canvas');
+  canvas.width = tileColumns * MAP_TILE_SIZE;
+  canvas.height = tileRows * MAP_TILE_SIZE;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx) throw new Error('Canvas 2D context is unavailable for map overlay.');
+
+  const jobs = [];
+  for (let ty = bounds.minY; ty <= bounds.maxY; ty += 1) {
+    for (let tx = bounds.minX; tx <= bounds.maxX; tx += 1) {
+      jobs.push({ tx, ty, url: formatMapTileUrl(provider, zoom, tx, ty) });
+    }
+  }
+
+  await runWithConcurrency(jobs, MAP_TILE_CONCURRENCY, async (job) => {
+    const image = await loadTileImage(job.url);
+    ctx.drawImage(
+      image,
+      (job.tx - bounds.minX) * MAP_TILE_SIZE,
+      (job.ty - bounds.minY) * MAP_TILE_SIZE,
+      MAP_TILE_SIZE,
+      MAP_TILE_SIZE
+    );
+  });
+
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  return {
+    provider,
+    bounds,
+    zoom,
+    width: canvas.width,
+    height: canvas.height,
+    data: imageData.data,
+  };
+}
+
+async function buildMapMosaic(bbox, zoom) {
+  const preferred = state.mapOverlay.providerId;
+  const providerIds = [preferred, 'esri_world_street', 'carto_voyager', 'esri_world_topo', 'carto_light', 'osm_standard']
+    .filter((value, index, values) => value && values.indexOf(value) === index);
+  let lastError = null;
+  for (const providerId of providerIds) {
+    try {
+      return await buildMapMosaicForProvider(providerId, bbox, zoom);
+    } catch (error) {
+      lastError = error;
+      console.warn(`[MANTA Gallery] map provider failed (${providerId}):`, error);
+    }
+  }
+  throw lastError ?? new Error('No map provider could be loaded.');
+}
+
+function sampleMapColor(mosaic, lon, lat, target, targetOffset) {
+  const pixel = lonLatToTilePixel(lon, lat, mosaic.zoom);
+  const px = Math.min(
+    mosaic.width - 1,
+    Math.max(0, Math.round(pixel.x - mosaic.bounds.minX * MAP_TILE_SIZE))
+  );
+  const py = Math.min(
+    mosaic.height - 1,
+    Math.max(0, Math.round(pixel.y - mosaic.bounds.minY * MAP_TILE_SIZE))
+  );
+  const source = (py * mosaic.width + px) * 4;
+  const alpha = mosaic.data[source + 3] / 255.0;
+  const fallback = 155;
+  target[targetOffset] = Math.round((mosaic.data[source] ?? fallback) * alpha + fallback * (1.0 - alpha));
+  target[targetOffset + 1] = Math.round((mosaic.data[source + 1] ?? fallback) * alpha + fallback * (1.0 - alpha));
+  target[targetOffset + 2] = Math.round((mosaic.data[source + 2] ?? fallback) * alpha + fallback * (1.0 - alpha));
+}
+
+function createMapActorFromTerrain(terrain, colors) {
+  const sourcePoints = terrain?.getPoints?.()?.getData?.();
+  const sourcePolys = terrain?.getPolys?.()?.getData?.();
+  if (!sourcePoints || !sourcePolys) {
+    throw new Error('Terrain geometry is unavailable for map overlay.');
+  }
+
+  const pointValues = new Float32Array(sourcePoints);
+  for (let i = 2; i < pointValues.length; i += 3) pointValues[i] += MAP_OVERLAY_LIFT;
+
+  const points = vtkPoints.newInstance();
+  points.setData(pointValues, 3);
+  const polys = vtkCellArray.newInstance();
+  polys.setData(sourcePolys);
+
+  const polyData = vtkPolyData.newInstance();
+  polyData.setPoints(points);
+  polyData.setPolys(polys);
+  const colorArray = vtkDataArray.newInstance({
+    name: 'basemap_rgb',
+    numberOfComponents: 3,
+    values: colors,
+  });
+  polyData.getPointData().addArray(colorArray);
+  polyData.getPointData().setActiveScalars?.('basemap_rgb');
+
+  const mapper = vtkMapper.newInstance();
+  mapper.setInputData(polyData);
+  mapper.setScalarVisibility(true);
+  mapper.setScalarModeToUsePointFieldData?.();
+  mapper.setColorByArrayName?.('basemap_rgb');
+  mapper.setColorModeToDirectScalars?.();
+  mapper.setInterpolateScalarsBeforeMapping?.(true);
+
+  const actor = vtkActor.newInstance();
+  actor.setMapper(mapper);
+  const property = actor.getProperty();
+  property.setOpacity(0.94);
+  applyGlobalLighting(property, { ambient: 0.68, diffuse: 0.42, specular: 0.0 });
+  return actor;
+}
+
+async function buildMapOverlayActor(container) {
+  const terrain = state.datasets.terrain;
+  const pointValues = terrain?.getPoints?.()?.getData?.();
+  if (!terrain || !pointValues) throw new Error('Terrain must be loaded before the map overlay.');
+  const bbox = terrainLonLatBbox(terrain);
+  if (!bbox) throw new Error('Could not determine terrain bounds for map overlay.');
+  const zoom = chooseMapZoom(bbox);
+  setStatus(container, `Loading online basemap tiles (zoom ${zoom})...`);
+  const mosaic = await buildMapMosaic(bbox, zoom);
+  const crs = getMapCrsConfig();
+  const pointCount = Math.floor(pointValues.length / 3);
+  const colors = new Uint8Array(pointCount * 3);
+  for (let pointId = 0; pointId < pointCount; pointId += 1) {
+    const base = pointId * 3;
+    const { lon, lat } = utmToLonLat(pointValues[base], pointValues[base + 1], crs);
+    sampleMapColor(mosaic, lon, lat, colors, base);
+  }
+  state.mapOverlay.attribution = mosaic.provider.attribution;
+  return createMapActorFromTerrain(terrain, colors);
+}
+
+function syncMapOverlayButton(container) {
+  const button = container?.querySelector?.('#toggle-map');
+  if (button) {
+    button.disabled = state.mapOverlay.loading;
+    button.setAttribute('aria-pressed', String(state.mapOverlay.enabled));
+    button.textContent = state.mapOverlay.loading
+      ? 'Map loading'
+      : state.mapOverlay.enabled
+        ? 'Map on'
+        : 'Map';
+  }
+  const providerSelect = container?.querySelector?.('#map-provider');
+  if (providerSelect) {
+    providerSelect.disabled = state.mapOverlay.loading;
+    providerSelect.value = state.mapOverlay.providerId;
+  }
+}
+
+function removeMapOverlayActor() {
+  if (state.actors.map) {
+    state.renderer?.removeActor(state.actors.map);
+  }
+  state.actors.map = null;
+  state.mapOverlay.attribution = '';
+}
+
+async function reloadMapOverlay(container) {
+  removeMapOverlayActor();
+  state.mapOverlay.enabled = true;
+  await toggleMapOverlay(container);
+}
+
+async function toggleMapOverlay(container) {
+  const token = ++state.mapOverlay.token;
+  if (state.mapOverlay.loading) return;
+
+  if (state.actors.map) {
+    state.mapOverlay.enabled = !state.mapOverlay.enabled;
+    state.actors.map.setVisibility(state.mapOverlay.enabled);
+    syncMapOverlayButton(container);
+    state.renderWindow?.render();
+    setStatus(
+      container,
+      state.mapOverlay.enabled
+        ? `Showing terrain basemap (${state.mapOverlay.attribution || 'online tiles'}).`
+        : `Hid terrain basemap.`
+    );
+    return;
+  }
+
+  state.mapOverlay.loading = true;
+  state.mapOverlay.enabled = true;
+  syncMapOverlayButton(container);
+  try {
+    const actor = await buildMapOverlayActor(container);
+    if (token !== state.mapOverlay.token) return;
+    state.actors.map = actor;
+    state.actors.map.setVisibility(true);
+    state.renderer?.addActor(actor);
+    state.renderer?.resetCameraClippingRange();
+    state.renderWindow?.render();
+    setStatus(container, `Showing terrain basemap (${state.mapOverlay.attribution}).`);
+  } catch (error) {
+    console.error('[MANTA Gallery] failed to load map overlay:', error);
+    state.mapOverlay.enabled = false;
+    setStatus(container, 'Failed to load online basemap tiles. Check network access and browser CORS policy.', true);
+  } finally {
+    state.mapOverlay.loading = false;
+    syncMapOverlayButton(container);
+  }
 }
 
 
@@ -2431,15 +3122,18 @@ function applyMThresholdInputs(container) {
 
   const waterValue = parseMThresholdValue(waterInput?.value, state.mThresholds.waterMax);
   const landslideValue = parseMThresholdValue(landslideInput?.value, state.mThresholds.landslideMin);
+  const previousWaterValue = state.mThresholds.waterMax;
 
   state.mThresholds.waterMax = waterValue;
   state.mThresholds.landslideMin = landslideValue;
   resetWaterAnalysisHistory();
+  if (!thresholdsMatch(previousWaterValue, waterValue)) resetWaterGlobalStats();
 
   if (waterInput) waterInput.value = String(waterValue);
   if (landslideInput) landslideInput.value = String(landslideValue);
 
   applyMThresholdsToRawDatasets();
+  updateWaterLegendReadout(container);
   updateCurrentFrameActors();
 
   setStatus(
@@ -2777,6 +3471,35 @@ function setupControls(container) {
     state.actors.terrain?.setVisibility(event.target.checked);
     state.renderWindow.render();
   });
+
+  const mapButton = container.querySelector('#toggle-map');
+  if (mapButton) {
+    syncMapOverlayButton(container);
+    mapButton.addEventListener('click', (event) => {
+      event.stopPropagation();
+      toggleMapOverlay(container).catch(console.error);
+    });
+  }
+  const mapProviderSelect = container.querySelector('#map-provider');
+  if (mapProviderSelect) {
+    mapProviderSelect.value = state.mapOverlay.providerId;
+    for (const eventName of ['pointerdown', 'mousedown', 'touchstart', 'wheel', 'dblclick']) {
+      mapProviderSelect.addEventListener(eventName, (event) => {
+        event.stopPropagation();
+      }, { passive: true });
+    }
+    mapProviderSelect.addEventListener('change', (event) => {
+      event.stopPropagation();
+      const providerId = event.target.value;
+      if (!MAP_TILE_PROVIDERS[providerId] || providerId === state.mapOverlay.providerId) return;
+      state.mapOverlay.providerId = providerId;
+      if (state.mapOverlay.enabled || state.actors.map) {
+        reloadMapOverlay(container).catch(console.error);
+      } else {
+        syncMapOverlayButton(container);
+      }
+    });
+  }
 
   container.querySelector('#toggle-water')?.addEventListener('change', (event) => {
     syncWaterActorVisibility();

@@ -54,6 +54,9 @@ OUTDIR = REPO_ROOT / "data" / "demo" / "aqaba_case_001"
 SOURCE = "fort"
 FRAME_INDEX = 20
 SEA_LEVEL = 0.0
+MAP_CRS_EPSG = 32637
+MAP_CRS_NAME = "WGS 84 / UTM zone 37N"
+MAP_CRS_UTM_ZONE = 37
 
 # Browser time-series export.
 EXPORT_FRAME_MODE = "all"
@@ -1237,7 +1240,6 @@ def export_case() -> None:
     landslide_template_meta = write_compact_archive(landslide_template_path, landslide_template)
     water_quads = np.asarray(water_template["quads"], dtype=np.uint32)
     landslide_quads = np.asarray(landslide_template["quads"], dtype=np.uint32)
-    water_b0 = np.asarray(F_default["b0"]).ravel()[water_source_ids]
 
     write_surface_vtp(
         F_terrain["X"],
@@ -1252,6 +1254,7 @@ def export_case() -> None:
         max_abs_value=WATER_AMP_ABS_HARD_LIMIT,
         bin_count=WATER_STATS_HISTOGRAM_BINS,
     )
+    water_amp_ocean_default_range = RangeAccumulator()
     water_m_range = RangeAccumulator()
     inundation_depth_range = RangeAccumulator()
     water_speed_range = RangeAccumulator()
@@ -1318,9 +1321,11 @@ def export_case() -> None:
         water_statistics_mask = (
             water_default_visible_points
             & np.isfinite(water_frame_arrays["wave_amplitude"])
-            & np.isfinite(water_b0)
-            & (water_b0 <= float(SEA_LEVEL) + float(WATER_OCEAN_B0_EPS))
+            & np.isfinite(water_frame_arrays["z"])
+            & np.isfinite(water_frame_arrays["h"])
+            & ((water_frame_arrays["z"] - water_frame_arrays["h"]) <= float(SEA_LEVEL))
         )
+        water_amp_ocean_default_range.update(water_frame_arrays["wave_amplitude"][water_statistics_mask])
         water_amp_statistics.update(water_frame_arrays["wave_amplitude"][water_statistics_mask])
         water_m_range.update(water_frame_arrays["m"][water_used])
         inundation_mask = (
@@ -1400,7 +1405,10 @@ def export_case() -> None:
                     "statistics": {
                         "type": "symmetric_abs_percentile",
                         "abs_percentile": float(WATER_STATS_ABS_PERCENTILE),
-                        "scope": "points in default-visible cells with b0 <= sea_level and m <= default_m",
+                        "scope": "points in default-visible cells with b = z - h <= sea_level and m <= default_m",
+                        "ocean_default_m_range": water_amp_ocean_default_range.as_list(),
+                        "ocean_default_m_display_range": water_amp_statistics_range,
+                        "ocean_default_m_raw_range": water_amp_ocean_default_range.as_list(),
                         "raw_exported_range": water_amp_range.as_list(),
                     },
                 },
@@ -1468,6 +1476,15 @@ def export_case() -> None:
         "camera": {"preset": "oblique"},
         "processing": {
             "sea_level": float(SEA_LEVEL),
+            "crs": {
+                "epsg": int(MAP_CRS_EPSG),
+                "name": MAP_CRS_NAME,
+                "type": "projected",
+                "projection": "UTM",
+                "utm_zone": int(MAP_CRS_UTM_ZONE),
+                "hemisphere": "N",
+                "unit": "m",
+            },
             "export_frame_mode": str(EXPORT_FRAME_MODE),
             "export_frame_step": int(EXPORT_FRAME_STEP),
             "vtp_float_dtype": str(VTP_FLOAT_DTYPE_NAME),
@@ -1592,6 +1609,7 @@ def print_export_summary(
     print("")
     print("Global exported scalar ranges")
     print(f"  water wave_amplitude raw exported: {water_amp_range}")
+    print(f"  water wave_amplitude ocean/default-m raw: {water_amp_ocean_default_range}")
     print(
         f"  water wave_amplitude robust p{WATER_STATS_ABS_PERCENTILE:g}: "
         f"{water_amp_statistics_range}"
