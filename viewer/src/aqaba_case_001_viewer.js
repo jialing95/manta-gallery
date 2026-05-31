@@ -793,7 +793,16 @@ function getWaterStatisticsRange() {
   return finitePairRange(manifestRange);
 }
 
+function getWaterStatisticsLabel() {
+  return state.caseInfo?.layers?.water?.colorbar?.range_label ?? 'full';
+}
+
 function getWaterDisplayRange() {
+  const configuredRange = state.caseInfo?.layers?.water?.colorbar?.display_range;
+  const cleanConfiguredRange = finitePairRange(configuredRange);
+  if (cleanConfiguredRange) return symmetricRangeFromRange(cleanConfiguredRange);
+
+  // Backward-compatible fallback for older manifests.
   const statsRange = getWaterStatisticsRange();
   if (!statsRange) return null;
 
@@ -1354,7 +1363,7 @@ function updateWaterColorbar() {
   });
 
   if (statsRange) {
-    const fullText = `full ${formatRange(statsRange)}`;
+    const fullText = `${getWaterStatisticsLabel()} ${formatRange(statsRange)}`;
     const rangeEl = document.getElementById('water-colorbar-range');
     if (rangeEl) rangeEl.textContent = fullText;
     setLegendReadout('water-scalar-readout', `wave_amplitude ${fullText}`);
