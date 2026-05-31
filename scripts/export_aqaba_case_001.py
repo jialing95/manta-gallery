@@ -279,6 +279,8 @@ def build_water_surface(F_full: Dict[str, np.ndarray]):
     h = F_full["h"]
     eta = F_full["eta"]
     m = F_full["m"]
+    u = F_full["u"]
+    v = F_full["v"]
     wave_amplitude = F_full["wave_amplitude"]
 
     # Wet/dry is physical depth + finite eta, not the default m threshold.
@@ -306,8 +308,11 @@ def build_water_surface(F_full: Dict[str, np.ndarray]):
     Z_water = np.where(water_mask, eta, np.nan)
     water_amp = np.where(water_mask, wave_amplitude, np.nan)
     water_m = np.where(water_mask, m, np.nan)
+    water_h = np.where(water_mask, h, np.nan)
+    water_u = np.where(water_mask, u, np.nan)
+    water_v = np.where(water_mask, v, np.nan)
 
-    return X, Y, Z_water, water_amp, water_m, amp_limit
+    return X, Y, Z_water, water_amp, water_m, water_h, water_u, water_v, amp_limit
 
 
 def build_landslide_surface(F_full: Dict[str, np.ndarray], global_landslide_roi: Tuple[int, int, int, int]):
@@ -1044,6 +1049,16 @@ def prepare_fields(S: Dict[str, Any]) -> Dict[str, np.ndarray]:
     if db is None:
         db = b - b0
 
+    hu = as_2d(S.get("hu"), "hu", X.shape, required=False)
+    hv = as_2d(S.get("hv"), "hv", X.shape, required=False)
+    u = np.zeros_like(h, dtype=float)
+    v = np.zeros_like(h, dtype=float)
+    moving = np.isfinite(h) & (h > float(WATER_DRY_TOL))
+    if hu is not None:
+        np.divide(hu, h, out=u, where=moving & np.isfinite(hu))
+    if hv is not None:
+        np.divide(hv, h, out=v, where=moving & np.isfinite(hv))
+
     wave_amplitude = eta - float(SEA_LEVEL)
 
     return {
@@ -1056,6 +1071,8 @@ def prepare_fields(S: Dict[str, Any]) -> Dict[str, np.ndarray]:
         "hm": hm,
         "m": m,
         "db": db,
+        "u": u,
+        "v": v,
         "wave_amplitude": wave_amplitude,
     }
 
@@ -1236,6 +1253,8 @@ def export_case() -> None:
         bin_count=WATER_STATS_HISTOGRAM_BINS,
     )
     water_m_range = RangeAccumulator()
+    inundation_depth_range = RangeAccumulator()
+    water_speed_range = RangeAccumulator()
     slide_hm_range = RangeAccumulator()
     slide_m_range = RangeAccumulator()
     slide_db_range = RangeAccumulator()
@@ -1248,12 +1267,15 @@ def export_case() -> None:
         S = cube.get_slice(int(native_k))
         F_full = prepare_fields(S)
 
-        Xw, Yw, Zw, water_amp, water_m, amp_limit = build_water_surface(F_full)
+        Xw, Yw, Zw, water_amp, water_m, water_h, water_u, water_v, amp_limit = build_water_surface(F_full)
         water_frame_arrays, water_valid_cells = build_compact_frame_arrays(
             np.asarray(Zw).ravel()[water_source_ids],
             {
                 "wave_amplitude": np.asarray(water_amp).ravel()[water_source_ids],
                 "m": np.asarray(water_m).ravel()[water_source_ids],
+                "h": np.asarray(water_h).ravel()[water_source_ids],
+                "u": np.asarray(water_u).ravel()[water_source_ids],
+                "v": np.asarray(water_v).ravel()[water_source_ids],
             },
             water_quads,
         )
@@ -1301,6 +1323,15 @@ def export_case() -> None:
         )
         water_amp_statistics.update(water_frame_arrays["wave_amplitude"][water_statistics_mask])
         water_m_range.update(water_frame_arrays["m"][water_used])
+        inundation_mask = (
+            water_default_visible_points
+            & np.isfinite(water_frame_arrays["h"])
+            & np.isfinite(water_frame_arrays["z"])
+            & ((water_frame_arrays["z"] - water_frame_arrays["h"]) >= float(SEA_LEVEL))
+        )
+        inundation_depth_range.update(water_frame_arrays["h"][inundation_mask])
+        water_speed = np.hypot(water_frame_arrays["u"], water_frame_arrays["v"])
+        water_speed_range.update(water_speed[water_default_visible_points])
         slide_hm_range.update(landslide_frame_arrays["hm"][landslide_used])
         slide_m_range.update(landslide_frame_arrays["m"][landslide_used])
         slide_db_range.update(landslide_frame_arrays["db"][landslide_used])
@@ -1371,6 +1402,30 @@ def export_case() -> None:
                         "abs_percentile": float(WATER_STATS_ABS_PERCENTILE),
                         "scope": "points in default-visible cells with b0 <= sea_level and m <= default_m",
                         "raw_exported_range": water_amp_range.as_list(),
+                    },
+                },
+                "analysis_overlays": {
+                    "inundation": {
+                        "scalar": "h",
+                        "label": "Inundation depth relative to sea level",
+                        "unit": "m",
+                        "condition": "b >= sea_level, where b = z - h",
+                        "water_m_bound": True,
+                        "range": inundation_depth_range.as_list(),
+                        "colormap": "fgmax_inundation_depth_classes",
+                    },
+                    "velocity": {
+                        "components": ["u", "v"],
+                        "label": "Wave velocity",
+                        "unit": "m/s",
+                        "water_m_bound": True,
+                        "range": water_speed_range.as_list(),
+                        "arrow_colormap": "turbo",
+                        "maximum_colormap": "cmocean.speed",
+                        "arrow_stride": 1,
+                        "arrow_scale": 10.0,
+                        "arrow_max_count": 20000,
+                        "arrow_min_speed": 0.01,
                     },
                 },
             },
@@ -1480,6 +1535,8 @@ def export_case() -> None:
         water_amp_range=water_amp_range.as_list(),
         water_amp_statistics_range=water_amp_statistics_range,
         water_m_range=water_m_range.as_list(),
+        inundation_depth_range=inundation_depth_range.as_list(),
+        water_speed_range=water_speed_range.as_list(),
         slide_hm_range=slide_hm_range.as_list(),
         slide_m_range=slide_m_range.as_list(),
         slide_db_range=slide_db_range.as_list(),
@@ -1499,6 +1556,8 @@ def print_export_summary(
     water_amp_range,
     water_amp_statistics_range,
     water_m_range,
+    inundation_depth_range,
+    water_speed_range,
     slide_hm_range,
     slide_m_range,
     slide_db_range,
@@ -1538,6 +1597,8 @@ def print_export_summary(
         f"{water_amp_statistics_range}"
     )
     print(f"  water m:                {water_m_range}")
+    print(f"  inundation depth:       {inundation_depth_range}")
+    print(f"  water speed:            {water_speed_range}")
     print(f"  landslide hm:           {slide_hm_range}")
     print(f"  landslide m:            {slide_m_range}")
     print(f"  landslide db:           {slide_db_range}")

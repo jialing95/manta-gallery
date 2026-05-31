@@ -21,6 +21,13 @@ The water surface is colored by wave height using:
 
 The water layer is filtered by a water-like solid-fraction cutoff.
 
+### Water analysis overlays
+
+The browser can isolate current-frame inland inundation depth where `b >= 0`
+and show water-velocity arrows. Both overlays use the active water-like
+solid-fraction cutoff. Cumulative maximum inundation depth and maximum wave
+velocity are computed on demand from the first frame through the paused frame.
+
 ### Landslide material
 
 The landslide material layer is colored by one of:
