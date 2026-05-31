@@ -27,6 +27,9 @@ The browser can isolate current-frame inland inundation depth where `b >= 0`
 and show water-velocity arrows. Both overlays use the active water-like
 solid-fraction cutoff. Cumulative maximum inundation depth and maximum wave
 velocity are computed on demand from the first frame through the paused frame.
+Velocity arrows use `turbo`, cell-aware lengths, and spatial sampling across the
+water region. Maximum velocity uses `cmocean.speed` with a `99.5`th-percentile
+saturation limit.
 
 ### Landslide material
 
