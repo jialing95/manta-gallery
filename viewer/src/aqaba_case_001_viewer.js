@@ -117,17 +117,17 @@ function injectCss() {
 
     .manta-viewer-status {
       position: absolute;
-      left: 12px;
-      top: 12px;
+      left: 24px;
+      top: 24px;
       z-index: 20;
-      max-width: min(820px, calc(100% - 24px));
-      padding: 7px 10px;
-      border-radius: 6px;
-      font-size: 13px;
+      max-width: min(1640px, calc(100% - 48px));
+      padding: 14px 20px;
+      border-radius: 12px;
+      font-size: 26px;
       line-height: 1.35;
       color: #24292f;
       background: rgba(255, 255, 255, 0.92);
-      box-shadow: 0 1px 5px rgba(0, 0, 0, 0.2);
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
       pointer-events: none;
     }
 
@@ -139,17 +139,17 @@ function injectCss() {
 
     .manta-amr-hud {
       position: absolute;
-      left: 12px;
-      top: 54px;
+      left: 24px;
+      top: 108px;
       z-index: 21;
-      max-width: min(760px, calc(100% - 24px));
-      padding: 6px 9px;
-      border-radius: 6px;
-      font-size: 12px;
+      max-width: min(1520px, calc(100% - 48px));
+      padding: 12px 18px;
+      border-radius: 12px;
+      font-size: 24px;
       line-height: 1.3;
       color: #24292f;
       background: rgba(255, 255, 255, 0.88);
-      box-shadow: 0 1px 5px rgba(0, 0, 0, 0.18);
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
       pointer-events: none;
       font-variant-numeric: tabular-nums;
     }
@@ -272,55 +272,55 @@ function injectCss() {
 
     .manta-viewer-legend {
       position: absolute;
-      right: 12px;
-      top: 12px;
+      right: 24px;
+      top: 24px;
       z-index: 30;
-      padding: 8px 10px;
-      border-radius: 8px;
-      font-size: 12px;
+      padding: 16px 20px;
+      border-radius: 16px;
+      font-size: 24px;
       color: #24292f;
       background: rgba(255, 255, 255, 0.92);
-      box-shadow: 0 1px 5px rgba(0, 0, 0, 0.2);
-      width: 310px;
-      max-width: calc(100% - 24px);
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+      width: 620px;
+      max-width: calc(100% - 48px);
     }
 
     .manta-viewer-legend-title {
       font-weight: 700;
-      margin-bottom: 5px;
+      margin-bottom: 10px;
     }
 
     .manta-viewer-legend-row {
       display: flex;
       align-items: center;
-      gap: 7px;
-      margin: 4px 0;
+      gap: 14px;
+      margin: 8px 0;
       white-space: nowrap;
     }
 
     .manta-swatch {
-      width: 15px;
-      height: 15px;
-      flex: 0 0 15px;
-      border-radius: 3px;
-      border: 1px solid rgba(0, 0, 0, 0.25);
+      width: 30px;
+      height: 30px;
+      flex: 0 0 30px;
+      border-radius: 6px;
+      border: 2px solid rgba(0, 0, 0, 0.25);
       display: inline-block;
     }
 
     .manta-viewer-legend-value {
       color: #57606a;
-      font-size: 11px;
+      font-size: 22px;
       margin-left: auto;
     }
 
     .manta-viewer-colorbars {
-      margin-top: 9px;
-      padding-top: 8px;
-      border-top: 1px solid rgba(31, 35, 40, 0.14);
+      margin-top: 18px;
+      padding-top: 16px;
+      border-top: 2px solid rgba(31, 35, 40, 0.14);
     }
 
     .manta-colorbar {
-      margin-top: 8px;
+      margin-top: 16px;
     }
 
     .manta-colorbar:first-child {
@@ -331,8 +331,8 @@ function injectCss() {
       display: flex;
       align-items: baseline;
       justify-content: space-between;
-      gap: 8px;
-      margin-bottom: 4px;
+      gap: 16px;
+      margin-bottom: 8px;
     }
 
     .manta-colorbar-title {
@@ -342,15 +342,15 @@ function injectCss() {
 
     .manta-colorbar-range {
       color: #57606a;
-      font-size: 11px;
+      font-size: 22px;
       white-space: nowrap;
     }
 
     .manta-colorbar-strip {
       width: 100%;
-      height: 12px;
+      height: 24px;
       border-radius: 999px;
-      border: 1px solid rgba(31, 35, 40, 0.22);
+      border: 2px solid rgba(31, 35, 40, 0.22);
       box-sizing: border-box;
       overflow: hidden;
     }
@@ -358,11 +358,35 @@ function injectCss() {
     .manta-colorbar-ticks {
       display: flex;
       justify-content: space-between;
-      gap: 6px;
-      margin-top: 3px;
+      gap: 12px;
+      margin-top: 6px;
       color: #57606a;
-      font-size: 10px;
+      font-size: 20px;
       line-height: 1.2;
+    }
+
+    .manta-colorbar-ticks-classified {
+      position: relative;
+      display: block;
+      height: 28px;
+    }
+
+    .manta-colorbar-tick-classified {
+      position: absolute;
+      top: 0;
+      transform: translateX(-50%);
+      white-space: nowrap;
+      text-align: center;
+    }
+
+    .manta-colorbar-tick-classified:first-child {
+      transform: translateX(0);
+      text-align: left;
+    }
+
+    .manta-colorbar-tick-classified:last-child {
+      transform: translateX(-100%);
+      text-align: right;
     }
 
     .manta-colorbar-ticks span:nth-child(2) {
@@ -429,6 +453,7 @@ function setupDom(container) {
       <div class="manta-viewer-legend-row">
         <span class="manta-swatch manta-swatch-water"></span>
         Water surface
+        <span id="water-scalar-readout" class="manta-viewer-legend-value">loading</span>
       </div>
       <div class="manta-viewer-legend-row">
         <span class="manta-swatch manta-swatch-landslide"></span>
@@ -443,7 +468,7 @@ function setupDom(container) {
             <span id="water-colorbar-range" class="manta-colorbar-range"></span>
           </div>
           <div id="water-colorbar-strip" class="manta-colorbar-strip"></div>
-          <div class="manta-colorbar-ticks">
+          <div id="water-colorbar-ticks" class="manta-colorbar-ticks">
             <span id="water-colorbar-min"></span>
             <span id="water-colorbar-mid"></span>
             <span id="water-colorbar-max"></span>
@@ -456,7 +481,7 @@ function setupDom(container) {
             <span id="landslide-colorbar-range" class="manta-colorbar-range"></span>
           </div>
           <div id="landslide-colorbar-strip" class="manta-colorbar-strip"></div>
-          <div class="manta-colorbar-ticks">
+          <div id="landslide-colorbar-ticks" class="manta-colorbar-ticks">
             <span id="landslide-colorbar-min"></span>
             <span id="landslide-colorbar-mid"></span>
             <span id="landslide-colorbar-max"></span>
@@ -842,6 +867,18 @@ function getWaterStatisticsLabel() {
   return state.caseInfo?.layers?.water?.colorbar?.range_label ?? 'full';
 }
 
+function getWaterGlobalRange() {
+  return finitePairRange(
+    state.caseInfo?.layers?.water?.colorbar?.statistics?.raw_exported_range
+  ) ?? getWaterStatisticsRange();
+}
+
+function getLandslideGlobalRange(scalarName) {
+  return finitePairRange(
+    state.caseInfo?.layers?.landslide?.available_scalars?.[scalarName]?.range
+  );
+}
+
 function getWaterDisplayRange() {
   const configuredRange = state.caseInfo?.layers?.water?.colorbar?.display_range;
   const cleanConfiguredRange = finitePairRange(configuredRange);
@@ -870,7 +907,7 @@ function getWaterOverlayRange(overlayName) {
   return [0.0, Math.max(Math.abs(configured[0]), Math.abs(configured[1]), 1e-12)];
 }
 
-function getInundationColorStops(range = getWaterOverlayRange('inundation')) {
+function getInundationColorSpec(range = getWaterOverlayRange('inundation')) {
   const vmax = Math.max(Number(range?.[1] ?? 15.0), 1e-12);
   const boundaries = [0.0, 0.5, 1.0, 2.5, 5.0, 7.5, 10.0, 15.0, vmax]
     .filter((value, index, values) => value <= vmax && (index === 0 || value > values[index - 1]));
@@ -878,13 +915,29 @@ function getInundationColorStops(range = getWaterOverlayRange('inundation')) {
   if (boundaries.length < 2) boundaries.push(vmax);
 
   const stops = [];
+  const legendStops = [];
   for (let i = 0; i < boundaries.length - 1; i += 1) {
     const color = INUNDATION_CLASS_COLORS[Math.min(i, INUNDATION_CLASS_COLORS.length - 1)];
     const lo = boundaries[i] / vmax;
     const hi = boundaries[i + 1] / vmax;
     stops.push([lo, ...color], [hi, ...color]);
+    const legendLo = i / (boundaries.length - 1);
+    const legendHi = (i + 1) / (boundaries.length - 1);
+    legendStops.push([legendLo, ...color], [legendHi, ...color]);
   }
-  return stops;
+  return {
+    stops,
+    legendStops,
+    boundaries,
+    legendTicks: boundaries.map((value, index) => ({
+      value,
+      position: index / (boundaries.length - 1),
+    })),
+  };
+}
+
+function getInundationColorStops(range = getWaterOverlayRange('inundation')) {
+  return getInundationColorSpec(range).stops;
 }
 
 async function readVtp(url) {
@@ -1257,6 +1310,25 @@ function finiteMaskedRange(values, mask = null) {
   return Number.isFinite(vmin) && Number.isFinite(vmax) ? [vmin, vmax] : null;
 }
 
+function positivePercentileRange(values, percentile) {
+  if (!values) return null;
+  const positiveValues = [];
+  for (const value of values) {
+    const numericValue = Number(value);
+    if (Number.isFinite(numericValue) && numericValue > 0.0) {
+      positiveValues.push(numericValue);
+    }
+  }
+  if (positiveValues.length === 0) return null;
+  positiveValues.sort((a, b) => a - b);
+  const q = Math.min(100.0, Math.max(0.0, Number(percentile)));
+  const index = Math.min(
+    positiveValues.length - 1,
+    Math.max(0, Math.floor((q / 100.0) * (positiveValues.length - 1)))
+  );
+  return [0.0, Math.max(positiveValues[index], 1e-12)];
+}
+
 function getCurrentVisibleWaveRange() {
   if (!waterAnalysisIsAvailable()) return state.scalarInfo.water?.rawRange ?? null;
   const template = state.compact.templates.water;
@@ -1354,40 +1426,89 @@ function createMaximumVelocityDataset() {
   );
 }
 
+function getVelocityArrowOptions() {
+  const configured = state.caseInfo?.layers?.water?.analysis_overlays?.velocity ?? {};
+  const stride = Math.max(1, Math.round(Number(configured.arrow_stride) || VELOCITY_ARROW_STRIDE));
+  const scale = Math.max(0.0, Number(configured.arrow_scale) || VELOCITY_ARROW_SCALE);
+  const maxCount = Math.max(1, Math.round(Number(configured.arrow_max_count) || VELOCITY_ARROW_MAX_COUNT));
+  const minSpeed = Math.max(0.0, Number(configured.arrow_min_speed) || VELOCITY_ARROW_MIN_SPEED);
+  const detail = state.caseInfo?.processing?.water_surface?.coastal_detail ?? {};
+  const spacings = [Number(detail.row_spacing_m), Number(detail.col_spacing_m)]
+    .filter((value) => Number.isFinite(value) && value > 0.0);
+  const cellScale = spacings.length > 0 ? Math.min(...spacings) : 1.0;
+  return { stride, scale, maxCount, minSpeed, cellScale };
+}
+
+function spatiallySampleVelocityCandidates(candidates, template, maxCount) {
+  if (candidates.length <= maxCount) return candidates;
+  let xmin = Number.POSITIVE_INFINITY;
+  let xmax = Number.NEGATIVE_INFINITY;
+  let ymin = Number.POSITIVE_INFINITY;
+  let ymax = Number.NEGATIVE_INFINITY;
+  for (const candidate of candidates) {
+    const pointBase = candidate.pointId * 3;
+    const x = Number(template.pointValues[pointBase]);
+    const y = Number(template.pointValues[pointBase + 1]);
+    xmin = Math.min(xmin, x);
+    xmax = Math.max(xmax, x);
+    ymin = Math.min(ymin, y);
+    ymax = Math.max(ymax, y);
+  }
+
+  const width = Math.max(xmax - xmin, 1.0);
+  const height = Math.max(ymax - ymin, 1.0);
+  const columnCount = Math.max(1, Math.ceil(Math.sqrt(maxCount * width / height)));
+  const rowCount = Math.max(1, Math.floor(maxCount / columnCount));
+  const buckets = new Map();
+  for (const candidate of candidates) {
+    const pointBase = candidate.pointId * 3;
+    const x = Number(template.pointValues[pointBase]);
+    const y = Number(template.pointValues[pointBase + 1]);
+    const column = Math.min(columnCount - 1, Math.floor(columnCount * (x - xmin) / width));
+    const row = Math.min(rowCount - 1, Math.floor(rowCount * (y - ymin) / height));
+    const key = row * columnCount + column;
+    const previous = buckets.get(key);
+    if (!previous || candidate.speed > previous.speed) buckets.set(key, candidate);
+  }
+  return Array.from(buckets.values()).sort((a, b) => a.pointId - b.pointId);
+}
+
 function createVelocityArrowDataset() {
   const template = state.compact.templates.water;
   const frame = state.compact.currentFrames.water;
   const visiblePoints = compactPointMaskFromCellPredicate(template, getWaterCellPredicate(frame));
+  const options = getVelocityArrowOptions();
   const candidates = [];
 
-  for (let pointId = 0; pointId < visiblePoints.length; pointId += VELOCITY_ARROW_STRIDE) {
+  for (let pointId = 0; pointId < visiblePoints.length; pointId += options.stride) {
     if (!visiblePoints[pointId]) continue;
     const u = Number(frame.u[pointId]);
     const v = Number(frame.v[pointId]);
     const speed = Math.hypot(u, v);
-    if (Number.isFinite(speed) && speed >= VELOCITY_ARROW_MIN_SPEED) {
-      candidates.push(pointId);
+    if (Number.isFinite(speed) && speed >= options.minSpeed) {
+      candidates.push({ pointId, speed });
     }
   }
 
-  const sampleStep = Math.max(1, Math.ceil(candidates.length / VELOCITY_ARROW_MAX_COUNT));
-  const arrowCount = Math.ceil(candidates.length / sampleStep);
+  const sampledCandidates = spatiallySampleVelocityCandidates(candidates, template, options.maxCount);
+  const arrowCount = sampledCandidates.length;
   const pointValues = new Float32Array(arrowCount * 18);
   const lineValues = new Uint32Array(arrowCount * 9);
   const speedValues = new Float32Array(arrowCount * 6);
   let arrowIndex = 0;
 
-  for (let candidateIndex = 0; candidateIndex < candidates.length; candidateIndex += sampleStep) {
-    const pointId = candidates[candidateIndex];
+  for (const candidate of sampledCandidates) {
+    const pointId = candidate.pointId;
     const pointBase = pointId * 3;
     const x = Number(template.pointValues[pointBase]);
     const y = Number(template.pointValues[pointBase + 1]);
     const z = Number(frame.z[pointId]) + ANALYSIS_SURFACE_LIFT;
     const u = Number(frame.u[pointId]);
     const v = Number(frame.v[pointId]);
-    const speed = Math.hypot(u, v);
-    const dx = u * VELOCITY_ARROW_SCALE;
-    const dy = v * VELOCITY_ARROW_SCALE;
+    const speed = candidate.speed;
+    const lengthScale = options.scale * options.cellScale;
+    const dx = u * lengthScale;
+    const dy = v * lengthScale;
     const endX = x + dx;
     const endY = y + dy;
     const wingX = -dx * 0.24;
@@ -1549,6 +1670,7 @@ function renderWaterAnalysisOverlay() {
   let colorStops;
   let fixedRange;
   let lineWidth = null;
+  let opacity = ANALYSIS_SURFACE_OPACITY;
   if (mode === 'inundation') {
     polyData = createCurrentInundationDataset();
     scalarName = 'inundation_depth';
@@ -1568,8 +1690,12 @@ function renderWaterAnalysisOverlay() {
   } else {
     polyData = createMaximumVelocityDataset();
     scalarName = 'maximum_wave_velocity';
-    fixedRange = getWaterOverlayRange('velocity');
+    fixedRange = positivePercentileRange(
+      state.analysis.history?.velocitySpeed,
+      MAXIMUM_VELOCITY_DISPLAY_PERCENTILE
+    ) ?? getWaterOverlayRange('velocity');
     colorStops = CMOCEAN_SPEED_COLOR_STOPS;
+    opacity = 1.0;
   }
 
   const { actor, scalarInfo } = createScalarActor(
@@ -1577,7 +1703,7 @@ function renderWaterAnalysisOverlay() {
     [scalarName],
     colorStops,
     [0.18, 0.62, 0.86],
-    ANALYSIS_SURFACE_OPACITY,
+    opacity,
     { fixedRange }
   );
   if (lineWidth !== null) actor.getProperty().setLineWidth?.(lineWidth);
@@ -1686,11 +1812,15 @@ const TURBO_COLOR_STOPS = [
 
 const CMOCEAN_SPEED_COLOR_STOPS = [
   [0.000, 1.000, 0.991, 0.804],
-  [0.167, 0.882, 0.806, 0.450],
-  [0.333, 0.668, 0.674, 0.127],
+  [0.100, 0.933, 0.876, 0.595],
+  [0.200, 0.849, 0.772, 0.374],
+  [0.300, 0.723, 0.697, 0.183],
+  [0.400, 0.556, 0.634, 0.043],
   [0.500, 0.373, 0.571, 0.048],
-  [0.667, 0.095, 0.449, 0.156],
-  [0.833, 0.079, 0.294, 0.165],
+  [0.600, 0.198, 0.503, 0.121],
+  [0.700, 0.058, 0.418, 0.168],
+  [0.800, 0.063, 0.328, 0.173],
+  [0.900, 0.097, 0.230, 0.139],
   [1.000, 0.091, 0.137, 0.073],
 ];
 
@@ -1714,6 +1844,7 @@ const VELOCITY_ARROW_STRIDE = 1;
 const VELOCITY_ARROW_SCALE = 10.0;
 const VELOCITY_ARROW_MAX_COUNT = 20000;
 const VELOCITY_ARROW_MIN_SPEED = 0.01;
+const MAXIMUM_VELOCITY_DISPLAY_PERCENTILE = 99.5;
 const LANDSLIDE_COLOR_STOPS = {
   hm: MAGMA_COLOR_STOPS,
   m: MAGMA_COLOR_STOPS,
@@ -1878,6 +2009,22 @@ function setLegendReadout(id, text) {
   if (el) el.textContent = text;
 }
 
+function updateWaterLegendReadout() {
+  const globalRange = getWaterGlobalRange();
+  setLegendReadout(
+    'water-scalar-readout',
+    globalRange ? `global ${formatRange(globalRange)}` : 'global unavailable'
+  );
+}
+
+function updateLandslideLegendReadout(scalarName) {
+  const globalRange = getLandslideGlobalRange(scalarName);
+  setLegendReadout(
+    'landslide-scalar-readout',
+    globalRange ? `${scalarName} global ${formatRange(globalRange)}` : `${scalarName} global unavailable`
+  );
+}
+
 function stopsToCssGradient(stops) {
   return `linear-gradient(to right, ${stops
     .map(([position, red, green, blue]) => {
@@ -1890,7 +2037,41 @@ function stopsToCssGradient(stops) {
     .join(', ')})`;
 }
 
-function updateColorbar({ idPrefix, title, scalarInfo, colorStops, showZeroTick = false }) {
+function formatColorbarTick(value) {
+  const absValue = Math.abs(value);
+  if (absValue > 0 && absValue < 1e-2) return value.toExponential(1);
+  if (Number.isInteger(value)) return String(value);
+  return String(Number(value.toFixed(absValue < 10.0 ? 1 : 2)));
+}
+
+function renderColorbarTicks(container, ticks, range, classified = false) {
+  if (!container) return;
+  container.replaceChildren();
+  container.classList.toggle('manta-colorbar-ticks-classified', classified);
+  const [vmin, vmax] = range;
+  for (const item of ticks) {
+    const value = typeof item === 'number' ? item : Number(item.value);
+    const tick = document.createElement('span');
+    tick.textContent = classified ? formatColorbarTick(value) : formatScalar(value);
+    if (classified) {
+      tick.className = 'manta-colorbar-tick-classified';
+      const position = typeof item === 'number'
+        ? (value - vmin) / (vmax - vmin)
+        : Number(item.position);
+      tick.style.left = `${100.0 * position}%`;
+    }
+    container.appendChild(tick);
+  }
+}
+
+function updateColorbar({
+  idPrefix,
+  title,
+  scalarInfo,
+  colorStops,
+  showZeroTick = false,
+  classifiedTicks = null,
+}) {
   const container = document.getElementById(`${idPrefix}-colorbar`);
   if (!container) return;
 
@@ -1907,16 +2088,17 @@ function updateColorbar({ idPrefix, title, scalarInfo, colorStops, showZeroTick 
   const titleEl = document.getElementById(`${idPrefix}-colorbar-title`);
   const rangeEl = document.getElementById(`${idPrefix}-colorbar-range`);
   const stripEl = document.getElementById(`${idPrefix}-colorbar-strip`);
-  const minEl = document.getElementById(`${idPrefix}-colorbar-min`);
-  const midEl = document.getElementById(`${idPrefix}-colorbar-mid`);
-  const maxEl = document.getElementById(`${idPrefix}-colorbar-max`);
+  const ticksEl = document.getElementById(`${idPrefix}-colorbar-ticks`);
 
   if (titleEl) titleEl.textContent = title;
   if (rangeEl) rangeEl.textContent = formatRange(scalarInfo.range);
   if (stripEl) stripEl.style.background = stopsToCssGradient(colorStops);
-  if (minEl) minEl.textContent = formatScalar(vmin);
-  if (midEl) midEl.textContent = formatScalar(midValue);
-  if (maxEl) maxEl.textContent = formatScalar(vmax);
+  renderColorbarTicks(
+    ticksEl,
+    classifiedTicks ?? [vmin, midValue, vmax],
+    scalarInfo.range,
+    Boolean(classifiedTicks)
+  );
 }
 
 function updateWaterColorbar() {
@@ -1928,16 +2110,20 @@ function updateWaterColorbar() {
       velocity: 'Wave velocity arrows (m/s)',
       maximumVelocity: 'Maximum wave velocity (m/s)',
     }[mode];
+    const inundationSpec = getInundationColorSpec();
     const colorStops = mode === 'velocity'
       ? TURBO_COLOR_STOPS
       : mode === 'maximumVelocity'
         ? CMOCEAN_SPEED_COLOR_STOPS
-        : getInundationColorStops();
+        : inundationSpec.legendStops;
     updateColorbar({
       idPrefix: 'water',
       title,
       scalarInfo: state.scalarInfo.waterAnalysis,
       colorStops,
+      classifiedTicks: mode === 'inundation' || mode === 'maximumInundation'
+        ? inundationSpec.legendTicks
+        : null,
     });
     const analysisRange = state.scalarInfo.waterAnalysis?.rawRange;
     const rangeEl = document.getElementById('water-colorbar-range');
@@ -2300,10 +2486,7 @@ function applyLandslideScalar(scalarName) {
   });
 
   state.scalarInfo.landslide = scalarInfo;
-  setLegendReadout(
-    'landslide-scalar-readout',
-    scalarInfo ? `${scalarInfo.name} ${formatRange(scalarInfo.range)}` : 'solid'
-  );
+  updateLandslideLegendReadout(scalarName);
   updateLandslideColorbar(scalarName);
 
   state.renderWindow?.render();
@@ -2436,10 +2619,8 @@ function addActors(terrain, water, landslide) {
 
   resetCamera();
 
-  setLegendReadout(
-    'landslide-scalar-readout',
-    landslideScalarInfo ? `${landslideScalarInfo.name} ${formatRange(landslideScalarInfo.range)}` : 'solid'
-  );
+  updateWaterLegendReadout();
+  updateLandslideLegendReadout('hm');
 
   updateWaterColorbar();
   updateLandslideColorbar('hm');
