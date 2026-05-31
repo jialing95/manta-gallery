@@ -3,12 +3,15 @@
 MANTA Gallery is a collection of 3D PyVista-based interactive visualizations of
 landslide tsunamis modeled by D-Claw.
 
-## Build Aqaba LSB C10 From FORT Output
+## Build A Case From FORT Output
 
 Use one command from the repository root:
 
 ```bash
-./scripts/build_site.sh /path/to/dclaw-case
+./scripts/build_case.sh aqaba_lsa_c10 \
+  /home/daij/Desktop/compile_all/AQA_020_K1_C10_angm35_mixed \
+  --title "Aqaba LSA C10" \
+  --label "LSA C10"
 ```
 
 The input may be either:
@@ -17,9 +20,9 @@ The input may be either:
 - the output directory that directly contains `fort.q####`, `fort.t####`, and
   `fort.b####`
 
-The command exports compact browser assets, writes AMR sidecars, rebuilds the
-viewer bundle, syncs publish assets, and renders the Quarto site to
-`docs/_site/`.
+The command exports compact browser assets to `data/demo/<case-id>/`, writes AMR
+sidecars, updates the Gallery and case page, rebuilds the shared viewer bundle,
+syncs publish assets, and renders the Quarto site to `docs/_site/`.
 
 Preview the rendered site through a local HTTP server:
 
@@ -27,21 +30,40 @@ Preview the rendered site through a local HTTP server:
 ./scripts/preview_site.sh
 ```
 
-To publish after reviewing the local site, or to build and publish in one step:
+To build and publish in one step:
 
 ```bash
-./scripts/build_site.sh /path/to/dclaw-case --push
+./scripts/build_case.sh aqaba_lsa_c10 \
+  /home/daij/Desktop/compile_all/AQA_020_K1_C10_angm35_mixed \
+  --title "Aqaba LSA C10" \
+  --label "LSA C10" \
+  --push
 ```
 
-`--push` stages only `data/demo/aqaba_case_001`, commits changed canonical
-assets, and pushes `origin/main`. GitHub Actions rebuilds the viewer bundle and
-deploys GitHub Pages.
+`--push` stages only that case's canonical assets and generated case/gallery
+pages, commits them, and pushes `origin/main`. GitHub Actions rebuilds the shared
+viewer bundle and deploys GitHub Pages.
 
-The command defaults to `~/Desktop/preprocessor` for the MANTA source tree and
-uses its `.venv/bin/python` when present. Override those paths when needed:
+The legacy LSB C10 command still works:
 
 ```bash
-./scripts/build_site.sh /path/to/dclaw-case \
+./scripts/build_site.sh /path/to/dclaw-case
+```
+
+It is a wrapper around:
+
+```bash
+./scripts/build_case.sh aqaba_case_001 /path/to/dclaw-case \
+  --title "Aqaba LSB C10" \
+  --label "LSB C10"
+```
+
+Override local tool paths when needed:
+
+```bash
+./scripts/build_case.sh aqaba_lsa_c10 /path/to/dclaw-case \
+  --title "Aqaba LSA C10" \
+  --label "LSA C10" \
   --manta-src /path/to/preprocessor \
   --python /path/to/python
 ```
@@ -49,22 +71,24 @@ uses its `.venv/bin/python` when present. Override those paths when needed:
 Raw `fort.*` simulation files remain local. Only curated browser assets under
 `data/demo/` are committed.
 
+## Rebuild Without Re-Exporting Data
 
-=========================================
+Only modified viewer code:
 
-仅修改代码、不修改 FORT 数据时，无需运行耗时的完整导出流程。生成本地网页使用：
 ```bash
 npm run build:viewer
 ./scripts/sync_demo_assets.sh
 quarto render docs
 ```
 
-预览网页：
-```bash
-./scripts/preview_site.sh
-```
+Only modified Quarto/Markdown docs:
 
-如果仅修改文档`.qmd`，最短命令是：
 ```bash
 quarto render docs
+```
+
+Preview:
+
+```bash
+./scripts/preview_site.sh
 ```

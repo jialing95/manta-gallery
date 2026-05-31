@@ -7,11 +7,11 @@ export default defineConfig({
     outDir: resolve(__dirname, '../docs/assets/js'),
     emptyOutDir: false,
     rollupOptions: {
-      input: resolve(__dirname, 'src/aqaba_case_001_viewer.js'),
+      input: resolve(__dirname, 'src/manta_case_viewer.js'),
       output: {
-        entryFileNames: 'aqaba_case_001_viewer.bundle.js',
-        chunkFileNames: 'aqaba_case_001_viewer.[name].js',
-        assetFileNames: 'aqaba_case_001_viewer.[name][extname]',
+        entryFileNames: 'manta_case_viewer.bundle.js',
+        chunkFileNames: 'manta_case_viewer.[name].js',
+        assetFileNames: 'manta_case_viewer.[name][extname]',
       },
     },
   },

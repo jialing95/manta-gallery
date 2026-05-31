@@ -15,10 +15,10 @@ import vtkOpenGLRenderWindow from '@kitware/vtk.js/Rendering/OpenGL/RenderWindow
 import vtkRenderWindowInteractor from '@kitware/vtk.js/Rendering/Core/RenderWindowInteractor';
 import vtkInteractorStyleTrackballCamera from '@kitware/vtk.js/Interaction/Style/InteractorStyleTrackballCamera';
 
-const VIEWER_ID = 'aqaba-viewer';
-
-const CASE_BASE_URL = new URL('../data/demo/aqaba_case_001/', import.meta.url);
-const CASE_JSON_URL = new URL('case.json', CASE_BASE_URL);
+const DEFAULT_CASE_BASE_URL = new URL(
+  /* @vite-ignore */ '../data/demo/aqaba_case_001/',
+  import.meta.url
+);
 
 const state = {
   caseInfo: null,
@@ -26,6 +26,10 @@ const state = {
   renderWindow: null,
   openGLRenderWindow: null,
   interactor: null,
+  container: null,
+  caseBaseUrl: DEFAULT_CASE_BASE_URL,
+  caseJsonUrl: new URL('case.json', DEFAULT_CASE_BASE_URL),
+  viewerTitle: 'MANTA Gallery case',
   actors: {
     terrain: null,
     map: null,
@@ -105,10 +109,10 @@ const state = {
 };
 
 function injectCss() {
-  if (document.getElementById('manta-aqaba-viewer-css')) return;
+  if (document.getElementById('manta-case-viewer-css')) return;
 
   const style = document.createElement('style');
-  style.id = 'manta-aqaba-viewer-css';
+  style.id = 'manta-case-viewer-css';
   style.textContent = `
     .manta-viewer {
       position: relative;
@@ -622,7 +626,24 @@ function framePathFromPattern(pattern, frameIndex = 0) {
 }
 
 function caseUrl(path) {
-  return new URL(path, CASE_BASE_URL);
+  return new URL(path, state.caseBaseUrl);
+}
+
+function resolveCaseBaseUrl(container) {
+  const configured = container?.dataset?.caseBaseUrl;
+  if (configured) return new URL(configured, window.location.href);
+  return DEFAULT_CASE_BASE_URL;
+}
+
+function configureCaseFromContainer(container) {
+  state.container = container;
+  state.caseBaseUrl = resolveCaseBaseUrl(container);
+  state.caseJsonUrl = new URL(container?.dataset?.caseJson ?? 'case.json', state.caseBaseUrl);
+  state.viewerTitle = container?.dataset?.caseTitle || 'MANTA Gallery case';
+}
+
+function getCaseDisplayTitle(caseInfo = state.caseInfo) {
+  return caseInfo?.title || state.viewerTitle || 'MANTA Gallery case';
 }
 
 
@@ -3490,7 +3511,7 @@ function prefetchNearbyFrames(frameIndex) {
 async function loadCaseAndData(container) {
   setStatus(container, 'Loading case.json...');
 
-  const caseInfo = await fetchJson(CASE_JSON_URL);
+  const caseInfo = await fetchJson(state.caseJsonUrl);
   state.caseInfo = caseInfo;
   state.frameCount = getFrameCount(caseInfo);
   state.currentFrameIndex = getDefaultFrameIndex(caseInfo);
@@ -3499,7 +3520,7 @@ async function loadCaseAndData(container) {
   const terrainPath = caseInfo.layers.terrain.file;
   const terrainUrl = caseUrl(terrainPath);
 
-  console.log('[MANTA Gallery] case.json:', CASE_JSON_URL.href);
+  console.log('[MANTA Gallery] case.json:', state.caseJsonUrl.href);
   console.log('[MANTA Gallery] terrain:', terrainUrl.href);
 
   setStatus(container, 'Loading terrain and default time frame...');
@@ -3671,7 +3692,7 @@ async function requestFrame(frameIndex, container) {
 
     setStatus(
       container,
-      `Loaded Aqaba Case LSB C10 (${getFrameLabel(state.caseInfo, k)}). Drag to rotate, scroll to zoom.`
+      `Loaded ${getCaseDisplayTitle()} (${getFrameLabel(state.caseInfo, k)}). Drag to rotate, scroll to zoom.`
     );
   } catch (error) {
     console.error('[MANTA Gallery] failed to load frame:', error);
@@ -4262,12 +4283,15 @@ function startMapOverlays(container) {
 }
 
 async function main() {
-  const container = document.getElementById(VIEWER_ID);
+  const container = document.querySelector('.manta-viewer[data-case-base-url]')
+    ?? document.getElementById('aqaba-viewer')
+    ?? document.querySelector('.manta-viewer');
   if (!container) {
-    console.error(`[MANTA Gallery] Missing container: #${VIEWER_ID}`);
+    console.error('[MANTA Gallery] Missing viewer container: .manta-viewer');
     return;
   }
 
+  configureCaseFromContainer(container);
   const host = setupDom(container);
 
   try {
@@ -4282,7 +4306,7 @@ await updateAmrForCurrentFrame(container);
 
     setStatus(
       container,
-      `Loaded Aqaba Case LSB C10 (${getFrameLabel(caseInfo, frameIndex)}). Drag to rotate, scroll to zoom.`
+      `Loaded ${getCaseDisplayTitle(caseInfo)} (${getFrameLabel(caseInfo, frameIndex)}). Drag to rotate, scroll to zoom.`
     );
   } catch (error) {
     console.error('[MANTA Gallery] viewer failed:', error);

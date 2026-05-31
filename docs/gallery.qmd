@@ -11,3 +11,11 @@ Interactive 3D view of landslide tsunami (case: LSB C10) in the Gulf of Aqaba.
 
 [Open case](cases/aqaba_case_001.qmd)
 :::
+
+::: {.case-card}
+### Aqaba LSA C10
+
+Interactive 3D view of landslide tsunami (case: LSA C10) in the Gulf of Aqaba.
+
+[Open case](cases/aqaba_lsa_c10.qmd)
+:::

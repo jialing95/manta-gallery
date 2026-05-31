@@ -115,6 +115,7 @@ LANDSLIDE_ROI_PAD = 24
 LANDSLIDE_ROI_HM_EPS = 1.0e-6
 
 TITLE = "Aqaba LSB C10"
+DESCRIPTION = "Aqaba LSB C10 time-series D-Claw export with water height and landslide material fields."
 
 
 # =============================================================================
@@ -128,9 +129,10 @@ def configure_runtime(
     outdir: Optional[Path] = None,
     frame_index: Optional[int] = None,
     title: Optional[str] = None,
+    description: Optional[str] = None,
 ) -> None:
     """Override case paths without editing this file for each local export."""
-    global CASE_DIR, MANTA_SRC, OUTDIR, FRAME_INDEX, TITLE
+    global CASE_DIR, MANTA_SRC, OUTDIR, FRAME_INDEX, TITLE, DESCRIPTION
 
     if case_dir is not None:
         CASE_DIR = Path(case_dir).expanduser().resolve()
@@ -142,6 +144,8 @@ def configure_runtime(
         FRAME_INDEX = int(frame_index)
     if title is not None:
         TITLE = str(title)
+    if description is not None:
+        DESCRIPTION = str(description)
 
 
 # =============================================================================
@@ -1350,7 +1354,7 @@ def export_case() -> None:
     case = {
         "id": OUTDIR.name,
         "title": TITLE,
-        "description": "Aqaba LSB C10 time-series D-Claw export with water height and landslide material fields.",
+        "description": DESCRIPTION,
         "source": {
             "kind": SOURCE,
             "case_dir": str(CASE_DIR),
@@ -1550,6 +1554,7 @@ def export_case() -> None:
         default_index=default_index,
         native_default=frame_indices[default_index],
         water_amp_range=water_amp_range.as_list(),
+        water_amp_ocean_default_range=water_amp_ocean_default_range.as_list(),
         water_amp_statistics_range=water_amp_statistics_range,
         water_m_range=water_m_range.as_list(),
         inundation_depth_range=inundation_depth_range.as_list(),
@@ -1571,6 +1576,7 @@ def print_export_summary(
     default_index: int,
     native_default: int,
     water_amp_range,
+    water_amp_ocean_default_range,
     water_amp_statistics_range,
     water_m_range,
     inundation_depth_range,
@@ -1583,7 +1589,7 @@ def print_export_summary(
     water_frames = sorted(water_dir.glob("frame_*.bin.gz"))
     landslide_frames = sorted(landslide_dir.glob("frame_*.bin.gz"))
 
-    print("[OK] Exported Aqaba Case 001 time series")
+    print(f"[OK] Exported {TITLE} time series")
     print(f"  outdir:    {OUTDIR}")
     print(f"  terrain:   {terrain_path} ({file_size_mb(terrain_path):.2f} MB)")
     print(f"  water:     compact v2, {len(water_frames)} frames ({total_size_mb(water_dir):.2f} MB)")
@@ -1631,6 +1637,7 @@ def main() -> None:
     parser.add_argument("--outdir", type=Path, default=OUTDIR)
     parser.add_argument("--frame-index", type=int, default=FRAME_INDEX)
     parser.add_argument("--title", default=TITLE)
+    parser.add_argument("--description", default=DESCRIPTION)
     args = parser.parse_args()
 
     configure_runtime(
@@ -1639,6 +1646,7 @@ def main() -> None:
         outdir=args.outdir,
         frame_index=args.frame_index,
         title=args.title,
+        description=args.description,
     )
     export_case()
 
