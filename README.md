@@ -48,3 +48,23 @@ uses its `.venv/bin/python` when present. Override those paths when needed:
 
 Raw `fort.*` simulation files remain local. Only curated browser assets under
 `data/demo/` are committed.
+
+
+=========================================
+
+仅修改代码、不修改 FORT 数据时，无需运行耗时的完整导出流程。生成本地网页使用：
+```bash
+npm run build:viewer
+./scripts/sync_demo_assets.sh
+quarto render docs
+```
+
+预览网页：
+```bash
+./scripts/preview_site.sh
+```
+
+如果仅修改文档`.qmd`，最短命令是：
+```bash
+quarto render docs
+```
