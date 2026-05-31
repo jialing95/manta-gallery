@@ -50,7 +50,7 @@ Aqaba LSB C10 is an interactive 3D D-Claw landslide-tsunami case for the Gulf of
 |---|---|
 | DEM bathymetry | Sea-split target: `cmocean.deep`; currently kept as a static gray relief surface. |
 | DEM topography | Sea-split target: `cmcrameri.grayC + relief / hillshade`; terrain is exported at higher resolution than water frames. |
-| Water surface | Scalar = `wave_amplitude`; colorbar shows the full exported statistics range, while colors use a one-tenth symmetric display range for vivid playback. Surface opacity = `1.0` to preserve the mapped colors. |
+| Water surface | Scalar = `wave_amplitude`; colorbar and colors use a robust symmetric ocean-water range (`99.9`th percentile of absolute amplitude with default `m <= 0.3`). Inland free-surface geometry remains available for inundation detail without allowing high-ground elevations to stretch the wave-height scale. Surface opacity = `1.0`. |
 | Landslide | Scalar selector = `hm / m / Δb`; colormap = `magma`. |
 
 </details>

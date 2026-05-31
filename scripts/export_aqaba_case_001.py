@@ -94,6 +94,8 @@ WATER_AMP_OUTLIER_FACTOR = 6.0
 WATER_AMP_MIN_LIMIT = 10.0
 WATER_AMP_ROBUST_GUARD_ENABLED = False
 WATER_AMP_ABS_HARD_LIMIT = 100.0
+WATER_STATS_ABS_PERCENTILE = 99.9
+WATER_STATS_HISTOGRAM_BINS = 100_000
 
 # Global landslide ROI settings.
 # "all": scan all frames with ROI_FRAME_STEP.
@@ -162,6 +164,47 @@ class RangeAccumulator:
 
     def as_list(self):
         return [self.vmin, self.vmax]
+
+
+class AbsPercentileAccumulator:
+    """Estimate a global absolute-value percentile with a fixed histogram."""
+
+    def __init__(self, max_abs_value: float, bin_count: int) -> None:
+        self.max_abs_value = float(max_abs_value)
+        self.bin_count = int(bin_count)
+        if not np.isfinite(self.max_abs_value) or self.max_abs_value <= 0.0:
+            raise ValueError("max_abs_value must be finite and positive")
+        if self.bin_count <= 0:
+            raise ValueError("bin_count must be positive")
+        self.counts = np.zeros(self.bin_count, dtype=np.int64)
+        self.total = 0
+
+    def update(self, a: np.ndarray) -> None:
+        arr = np.asarray(a, dtype=float)
+        vals = np.abs(arr[np.isfinite(arr)])
+        if vals.size == 0:
+            return
+        vals = vals[vals <= self.max_abs_value]
+        if vals.size == 0:
+            return
+        bin_ids = np.minimum(
+            (vals / self.max_abs_value * self.bin_count).astype(np.int64),
+            self.bin_count - 1,
+        )
+        self.counts += np.bincount(bin_ids, minlength=self.bin_count)
+        self.total += int(vals.size)
+
+    def percentile(self, percentile: float) -> Optional[float]:
+        if self.total <= 0:
+            return None
+        q = float(np.clip(percentile, 0.0, 100.0))
+        target = max(1, int(np.ceil((q / 100.0) * self.total)))
+        bin_index = int(np.searchsorted(np.cumsum(self.counts), target, side="left"))
+        return float((bin_index + 1) * self.max_abs_value / self.bin_count)
+
+    def symmetric_range(self, percentile: float) -> list[Optional[float]]:
+        limit = self.percentile(percentile)
+        return [None, None] if limit is None else [-limit, limit]
 
 
 def clear_frame_dir(path: Path) -> None:
@@ -1177,6 +1220,7 @@ def export_case() -> None:
     landslide_template_meta = write_compact_archive(landslide_template_path, landslide_template)
     water_quads = np.asarray(water_template["quads"], dtype=np.uint32)
     landslide_quads = np.asarray(landslide_template["quads"], dtype=np.uint32)
+    water_b0 = np.asarray(F_default["b0"]).ravel()[water_source_ids]
 
     write_surface_vtp(
         F_terrain["X"],
@@ -1187,6 +1231,10 @@ def export_case() -> None:
     )
 
     water_amp_range = RangeAccumulator()
+    water_amp_statistics = AbsPercentileAccumulator(
+        max_abs_value=WATER_AMP_ABS_HARD_LIMIT,
+        bin_count=WATER_STATS_HISTOGRAM_BINS,
+    )
     water_m_range = RangeAccumulator()
     slide_hm_range = RangeAccumulator()
     slide_m_range = RangeAccumulator()
@@ -1236,6 +1284,22 @@ def export_case() -> None:
         water_used = compact_used_points(water_valid_cells, water_quads, water_source_ids.size)
         landslide_used = compact_used_points(landslide_valid_cells, landslide_quads, Zs.size)
         water_amp_range.update(water_frame_arrays["wave_amplitude"][water_used])
+        water_default_visible_cells = water_valid_cells & np.all(
+            water_frame_arrays["m"][water_quads] <= float(WATER_M_DEFAULT),
+            axis=1,
+        )
+        water_default_visible_points = compact_used_points(
+            water_default_visible_cells,
+            water_quads,
+            water_source_ids.size,
+        )
+        water_statistics_mask = (
+            water_default_visible_points
+            & np.isfinite(water_frame_arrays["wave_amplitude"])
+            & np.isfinite(water_b0)
+            & (water_b0 <= float(SEA_LEVEL) + float(WATER_OCEAN_B0_EPS))
+        )
+        water_amp_statistics.update(water_frame_arrays["wave_amplitude"][water_statistics_mask])
         water_m_range.update(water_frame_arrays["m"][water_used])
         slide_hm_range.update(landslide_frame_arrays["hm"][landslide_used])
         slide_m_range.update(landslide_frame_arrays["m"][landslide_used])
@@ -1244,6 +1308,8 @@ def export_case() -> None:
 
     if water_frame_layout is None or landslide_frame_layout is None:
         raise ValueError("Compact export failed: no browser frames were written.")
+
+    water_amp_statistics_range = water_amp_statistics.symmetric_range(WATER_STATS_ABS_PERCENTILE)
 
     case = {
         "id": OUTDIR.name,
@@ -1296,8 +1362,16 @@ def export_case() -> None:
                 "colormap_label": "Tsunami",
                 "colorbar": {
                     "side": "right",
-                    "range": water_amp_range.as_list(),
-                    "range_mode": "fixed_symmetric_global_one_tenth_in_viewer",
+                    "range": water_amp_statistics_range,
+                    "display_range": water_amp_statistics_range,
+                    "range_label": f"robust p{WATER_STATS_ABS_PERCENTILE:g}",
+                    "range_mode": "fixed_symmetric_ocean_default_water_m_abs_percentile",
+                    "statistics": {
+                        "type": "symmetric_abs_percentile",
+                        "abs_percentile": float(WATER_STATS_ABS_PERCENTILE),
+                        "scope": "points in default-visible cells with b0 <= sea_level and m <= default_m",
+                        "raw_exported_range": water_amp_range.as_list(),
+                    },
                 },
             },
             "landslide": {
@@ -1404,6 +1478,7 @@ def export_case() -> None:
         default_index=default_index,
         native_default=frame_indices[default_index],
         water_amp_range=water_amp_range.as_list(),
+        water_amp_statistics_range=water_amp_statistics_range,
         water_m_range=water_m_range.as_list(),
         slide_hm_range=slide_hm_range.as_list(),
         slide_m_range=slide_m_range.as_list(),
@@ -1422,6 +1497,7 @@ def print_export_summary(
     default_index: int,
     native_default: int,
     water_amp_range,
+    water_amp_statistics_range,
     water_m_range,
     slide_hm_range,
     slide_m_range,
@@ -1456,7 +1532,11 @@ def print_export_summary(
     print(f"  landslide roi rc:       {roi}")
     print("")
     print("Global exported scalar ranges")
-    print(f"  water wave_amplitude:   {water_amp_range}")
+    print(f"  water wave_amplitude raw exported: {water_amp_range}")
+    print(
+        f"  water wave_amplitude robust p{WATER_STATS_ABS_PERCENTILE:g}: "
+        f"{water_amp_statistics_range}"
+    )
     print(f"  water m:                {water_m_range}")
     print(f"  landslide hm:           {slide_hm_range}")
     print(f"  landslide m:            {slide_m_range}")

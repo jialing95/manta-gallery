@@ -257,10 +257,24 @@
       "colorbar": {
         "side": "right",
         "range": [
-          -99.98737335205078,
-          99.99932861328125
+          -10.447,
+          10.447
         ],
-        "range_mode": "fixed_symmetric_global_one_tenth_in_viewer"
+        "display_range": [
+          -10.447,
+          10.447
+        ],
+        "range_label": "robust p99.9",
+        "range_mode": "fixed_symmetric_ocean_default_water_m_abs_percentile",
+        "statistics": {
+          "type": "symmetric_abs_percentile",
+          "abs_percentile": 99.9,
+          "scope": "points in default-visible cells with b0 <= sea_level and m <= default_m",
+          "raw_exported_range": [
+            -99.98737335205078,
+            99.99932861328125
+          ]
+        }
       }
     },
     "landslide": {
