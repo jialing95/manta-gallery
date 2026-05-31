@@ -29,6 +29,7 @@ const state = {
     terrain: null,
     water: null,
     landslide: null,
+    waterAnalysis: null,
   },
   datasets: {
     terrain: null,
@@ -53,6 +54,7 @@ const state = {
   scalarInfo: {
     water: null,
     landslide: null,
+    waterAnalysis: null,
   },
   currentFrameIndex: 0,
   frameCount: 1,
@@ -73,6 +75,13 @@ const state = {
   amrVisible: false,
   amrActors: new Map(),
   amrLoadToken: 0,
+  analysis: {
+    mode: null,
+    history: null,
+    historyThreshold: null,
+    historyThrough: -1,
+    historyLoadToken: 0,
+  },
 };
 
 function injectCss() {
@@ -166,6 +175,25 @@ function injectCss() {
       background: rgba(255, 255, 255, 0.92);
       box-shadow: 0 1px 5px rgba(0, 0, 0, 0.2);
       pointer-events: auto;
+    }
+
+    .manta-viewer-controls-row {
+      display: flex;
+      flex: 1 1 100%;
+      flex-wrap: wrap;
+      gap: 8px 12px;
+      align-items: center;
+    }
+
+    .manta-analysis-controls {
+      padding-top: 7px;
+      border-top: 1px solid rgba(31, 35, 40, 0.14);
+    }
+
+    .manta-analysis-controls button[aria-pressed="true"] {
+      color: #ffffff;
+      background: #0969da;
+      border-color: #0969da;
     }
 
     .manta-viewer-controls,
@@ -273,6 +301,7 @@ function injectCss() {
     .manta-swatch {
       width: 15px;
       height: 15px;
+      flex: 0 0 15px;
       border-radius: 3px;
       border: 1px solid rgba(0, 0, 0, 0.25);
       display: inline-block;
@@ -400,7 +429,6 @@ function setupDom(container) {
       <div class="manta-viewer-legend-row">
         <span class="manta-swatch manta-swatch-water"></span>
         Water surface
-        <span id="water-scalar-readout" class="manta-viewer-legend-value">solid</span>
       </div>
       <div class="manta-viewer-legend-row">
         <span class="manta-swatch manta-swatch-landslide"></span>
@@ -438,6 +466,7 @@ function setupDom(container) {
     </div>
 
     <div class="manta-viewer-controls">
+      <div class="manta-viewer-controls-row">
       <label><input type="checkbox" id="toggle-terrain" checked> Terrain</label>
       <label><input type="checkbox" id="toggle-water" checked> Water</label>
       <label><input type="checkbox" id="toggle-landslide" checked> Landslide</label>
@@ -471,6 +500,22 @@ function setupDom(container) {
       </div>
 
       <button id="reset-camera" type="button">Reset view</button>
+      </div>
+
+      <div class="manta-viewer-controls-row manta-analysis-controls" aria-label="Water analysis overlays">
+        <label title="Show the current-frame inland water extent where b ≥ 0, filtered by the Water m threshold.">
+          <input type="checkbox" id="toggle-inundation"> Inundation
+        </label>
+        <button id="show-max-inundation" type="button" aria-pressed="false" title="Accumulate maximum inundation depth from the first frame through the paused current frame.">
+          Maximum inundation
+        </button>
+        <label title="Show current-frame water velocity arrows, filtered by the Water m threshold.">
+          <input type="checkbox" id="toggle-velocity"> Velocity arrows
+        </label>
+        <button id="show-max-velocity" type="button" aria-pressed="false" title="Accumulate maximum wave velocity from the first frame through the paused current frame.">
+          Maximum wave velocity
+        </button>
+      </div>
     </div>
   `;
 
@@ -812,6 +857,36 @@ function getWaterDisplayRange() {
   return [-displayLimit, displayLimit];
 }
 
+function getSeaLevel() {
+  const seaLevel = Number(state.caseInfo?.processing?.sea_level);
+  return Number.isFinite(seaLevel) ? seaLevel : 0.0;
+}
+
+function getWaterOverlayRange(overlayName) {
+  const configured = finitePairRange(
+    state.caseInfo?.layers?.water?.analysis_overlays?.[overlayName]?.range
+  );
+  if (!configured) return null;
+  return [0.0, Math.max(Math.abs(configured[0]), Math.abs(configured[1]), 1e-12)];
+}
+
+function getInundationColorStops(range = getWaterOverlayRange('inundation')) {
+  const vmax = Math.max(Number(range?.[1] ?? 15.0), 1e-12);
+  const boundaries = [0.0, 0.5, 1.0, 2.5, 5.0, 7.5, 10.0, 15.0, vmax]
+    .filter((value, index, values) => value <= vmax && (index === 0 || value > values[index - 1]));
+  if (boundaries[boundaries.length - 1] < vmax) boundaries.push(vmax);
+  if (boundaries.length < 2) boundaries.push(vmax);
+
+  const stops = [];
+  for (let i = 0; i < boundaries.length - 1; i += 1) {
+    const color = INUNDATION_CLASS_COLORS[Math.min(i, INUNDATION_CLASS_COLORS.length - 1)];
+    const lo = boundaries[i] / vmax;
+    const hi = boundaries[i + 1] / vmax;
+    stops.push([lo, ...color], [hi, ...color]);
+  }
+  return stops;
+}
+
 async function readVtp(url) {
   const reader = vtkXMLPolyDataReader.newInstance();
   const buffer = await fetchArrayBuffer(url);
@@ -1007,19 +1082,12 @@ function compactMPointPredicate(layerName) {
 
 function buildCompactVisiblePolys(template, frameArrays) {
   const quads = template.quads;
-  const validCells = frameArrays.valid_cells;
-  const m = frameArrays.m;
-  const keepPoint = compactMPointPredicate(template.layerName);
   const cellCount = Math.floor(quads.length / 4);
+  const keepPoint = compactMPointPredicate(template.layerName);
   let visibleCellCount = 0;
 
   function keepCell(cellIndex) {
-    if (!compactBitIsSet(validCells, cellIndex)) return false;
-    const base = cellIndex * 4;
-    return keepPoint(m[quads[base]])
-      && keepPoint(m[quads[base + 1]])
-      && keepPoint(m[quads[base + 2]])
-      && keepPoint(m[quads[base + 3]]);
+    return compactCellPassesM(template, frameArrays, cellIndex, keepPoint);
   }
 
   for (let cellIndex = 0; cellIndex < cellCount; cellIndex += 1) {
@@ -1039,6 +1107,60 @@ function buildCompactVisiblePolys(template, frameArrays) {
     target += 5;
   }
   return polys;
+}
+
+function compactCellPassesM(
+  template,
+  frameArrays,
+  cellIndex,
+  keepPoint = compactMPointPredicate(template.layerName)
+) {
+  if (!compactBitIsSet(frameArrays.valid_cells, cellIndex)) return false;
+  const base = cellIndex * 4;
+  const quads = template.quads;
+  const m = frameArrays.m;
+  return keepPoint(m[quads[base]])
+    && keepPoint(m[quads[base + 1]])
+    && keepPoint(m[quads[base + 2]])
+    && keepPoint(m[quads[base + 3]]);
+}
+
+function compactPolysFromCellPredicate(template, keepCell) {
+  const quads = template.quads;
+  const cellCount = Math.floor(quads.length / 4);
+  let selectedCount = 0;
+  for (let cellIndex = 0; cellIndex < cellCount; cellIndex += 1) {
+    if (keepCell(cellIndex)) selectedCount += 1;
+  }
+
+  const polys = new Uint32Array(selectedCount * 5);
+  let target = 0;
+  for (let cellIndex = 0; cellIndex < cellCount; cellIndex += 1) {
+    if (!keepCell(cellIndex)) continue;
+    const source = cellIndex * 4;
+    polys[target] = 4;
+    polys[target + 1] = quads[source];
+    polys[target + 2] = quads[source + 1];
+    polys[target + 3] = quads[source + 2];
+    polys[target + 4] = quads[source + 3];
+    target += 5;
+  }
+  return polys;
+}
+
+function compactPointMaskFromCellPredicate(template, keepCell) {
+  const quads = template.quads;
+  const cellCount = Math.floor(quads.length / 4);
+  const pointMask = new Uint8Array(template.pointValues.length / 3);
+  for (let cellIndex = 0; cellIndex < cellCount; cellIndex += 1) {
+    if (!keepCell(cellIndex)) continue;
+    const base = cellIndex * 4;
+    pointMask[quads[base]] = 1;
+    pointMask[quads[base + 1]] = 1;
+    pointMask[quads[base + 2]] = 1;
+    pointMask[quads[base + 3]] = 1;
+  }
+  return pointMask;
 }
 
 function updateCompactLayerDataset(layerName, frameArrays) {
@@ -1087,6 +1209,413 @@ function applyLoadedFrameData(frameData) {
   state.rawDatasets.water = frameData.water;
   state.rawDatasets.landslide = frameData.landslide;
   applyMThresholdsToRawDatasets();
+}
+
+function waterAnalysisIsAvailable() {
+  const frame = state.compact.currentFrames.water;
+  return Boolean(
+    state.compact.enabled
+      && frame?.z
+      && frame?.m
+      && frame?.h
+      && frame?.u
+      && frame?.v
+  );
+}
+
+function getWaterDryTolerance() {
+  const configured = Number(state.caseInfo?.processing?.water_surface?.dry_tolerance);
+  return Number.isFinite(configured) ? configured : 5.0e-4;
+}
+
+function getWaterCellPredicate(frameArrays, pointPredicate = null) {
+  const template = state.compact.templates.water;
+  const keepM = compactMPointPredicate('water');
+  return (cellIndex) => {
+    if (!compactCellPassesM(template, frameArrays, cellIndex, keepM)) return false;
+    if (!pointPredicate) return true;
+    const base = cellIndex * 4;
+    const quads = template.quads;
+    return pointPredicate(quads[base])
+      && pointPredicate(quads[base + 1])
+      && pointPredicate(quads[base + 2])
+      && pointPredicate(quads[base + 3]);
+  };
+}
+
+function finiteMaskedRange(values, mask = null) {
+  if (!values) return null;
+  let vmin = Number.POSITIVE_INFINITY;
+  let vmax = Number.NEGATIVE_INFINITY;
+  for (let i = 0; i < values.length; i += 1) {
+    if (mask && !mask[i]) continue;
+    const value = Number(values[i]);
+    if (!Number.isFinite(value)) continue;
+    vmin = Math.min(vmin, value);
+    vmax = Math.max(vmax, value);
+  }
+  return Number.isFinite(vmin) && Number.isFinite(vmax) ? [vmin, vmax] : null;
+}
+
+function getCurrentVisibleWaveRange() {
+  if (!waterAnalysisIsAvailable()) return state.scalarInfo.water?.rawRange ?? null;
+  const template = state.compact.templates.water;
+  const frame = state.compact.currentFrames.water;
+  const pointMask = compactPointMaskFromCellPredicate(template, getWaterCellPredicate(frame));
+  return finiteMaskedRange(frame.wave_amplitude, pointMask);
+}
+
+function maskedScalarValues(values, pointMask) {
+  const masked = new Float32Array(values.length);
+  masked.fill(Number.NaN);
+  for (let i = 0; i < values.length; i += 1) {
+    if (pointMask[i]) masked[i] = values[i];
+  }
+  return masked;
+}
+
+function createSurfaceOverlayDataset(zValues, scalarName, scalarValues, keepCell) {
+  const template = state.compact.templates.water;
+  const pointValues = new Float32Array(template.pointValues);
+  for (let i = 0; i < zValues.length; i += 1) {
+    const z = Number(zValues[i]);
+    pointValues[i * 3 + 2] = Number.isFinite(z) ? z + ANALYSIS_SURFACE_LIFT : Number.NaN;
+  }
+
+  const points = vtkPoints.newInstance();
+  points.setData(pointValues, 3);
+  const polys = vtkCellArray.newInstance();
+  polys.setData(compactPolysFromCellPredicate(template, keepCell));
+
+  const polyData = vtkPolyData.newInstance();
+  polyData.setPoints(points);
+  polyData.setPolys(polys);
+  polyData.getPointData().addArray(vtkDataArray.newInstance({
+    name: scalarName,
+    numberOfComponents: 1,
+    values: scalarValues,
+  }));
+  return polyData;
+}
+
+function createCurrentInundationDataset() {
+  const template = state.compact.templates.water;
+  const frame = state.compact.currentFrames.water;
+  const seaLevel = getSeaLevel();
+  const dryTolerance = getWaterDryTolerance();
+  const isInundated = (pointId) => {
+    const h = Number(frame.h[pointId]);
+    const z = Number(frame.z[pointId]);
+    return Number.isFinite(h)
+      && Number.isFinite(z)
+      && h > dryTolerance
+      && z - h >= seaLevel;
+  };
+  const keepCell = getWaterCellPredicate(frame, isInundated);
+  const pointMask = compactPointMaskFromCellPredicate(template, keepCell);
+  return createSurfaceOverlayDataset(frame.z, 'inundation_depth', maskedScalarValues(frame.h, pointMask), keepCell);
+}
+
+function createMaximumInundationDataset() {
+  const template = state.compact.templates.water;
+  const history = state.analysis.history;
+  const keepCell = (cellIndex) => {
+    const base = cellIndex * 4;
+    const quads = template.quads;
+    return Number.isFinite(history.inundationDepth[quads[base]])
+      && Number.isFinite(history.inundationDepth[quads[base + 1]])
+      && Number.isFinite(history.inundationDepth[quads[base + 2]])
+      && Number.isFinite(history.inundationDepth[quads[base + 3]]);
+  };
+  return createSurfaceOverlayDataset(
+    history.inundationZ,
+    'maximum_inundation_depth',
+    history.inundationDepth,
+    keepCell
+  );
+}
+
+function createMaximumVelocityDataset() {
+  const template = state.compact.templates.water;
+  const history = state.analysis.history;
+  const keepCell = (cellIndex) => {
+    const base = cellIndex * 4;
+    const quads = template.quads;
+    return Number.isFinite(history.velocitySpeed[quads[base]])
+      && Number.isFinite(history.velocitySpeed[quads[base + 1]])
+      && Number.isFinite(history.velocitySpeed[quads[base + 2]])
+      && Number.isFinite(history.velocitySpeed[quads[base + 3]]);
+  };
+  return createSurfaceOverlayDataset(
+    history.velocityZ,
+    'maximum_wave_velocity',
+    history.velocitySpeed,
+    keepCell
+  );
+}
+
+function createVelocityArrowDataset() {
+  const template = state.compact.templates.water;
+  const frame = state.compact.currentFrames.water;
+  const visiblePoints = compactPointMaskFromCellPredicate(template, getWaterCellPredicate(frame));
+  const candidates = [];
+
+  for (let pointId = 0; pointId < visiblePoints.length; pointId += VELOCITY_ARROW_STRIDE) {
+    if (!visiblePoints[pointId]) continue;
+    const u = Number(frame.u[pointId]);
+    const v = Number(frame.v[pointId]);
+    const speed = Math.hypot(u, v);
+    if (Number.isFinite(speed) && speed >= VELOCITY_ARROW_MIN_SPEED) {
+      candidates.push(pointId);
+    }
+  }
+
+  const sampleStep = Math.max(1, Math.ceil(candidates.length / VELOCITY_ARROW_MAX_COUNT));
+  const arrowCount = Math.ceil(candidates.length / sampleStep);
+  const pointValues = new Float32Array(arrowCount * 18);
+  const lineValues = new Uint32Array(arrowCount * 9);
+  const speedValues = new Float32Array(arrowCount * 6);
+  let arrowIndex = 0;
+
+  for (let candidateIndex = 0; candidateIndex < candidates.length; candidateIndex += sampleStep) {
+    const pointId = candidates[candidateIndex];
+    const pointBase = pointId * 3;
+    const x = Number(template.pointValues[pointBase]);
+    const y = Number(template.pointValues[pointBase + 1]);
+    const z = Number(frame.z[pointId]) + ANALYSIS_SURFACE_LIFT;
+    const u = Number(frame.u[pointId]);
+    const v = Number(frame.v[pointId]);
+    const speed = Math.hypot(u, v);
+    const dx = u * VELOCITY_ARROW_SCALE;
+    const dy = v * VELOCITY_ARROW_SCALE;
+    const endX = x + dx;
+    const endY = y + dy;
+    const wingX = -dx * 0.24;
+    const wingY = -dy * 0.24;
+    const perpX = -dy * 0.14;
+    const perpY = dx * 0.14;
+    const xyz = [
+      x, y, z, endX, endY, z,
+      endX, endY, z, endX + wingX + perpX, endY + wingY + perpY, z,
+      endX, endY, z, endX + wingX - perpX, endY + wingY - perpY, z,
+    ];
+    pointValues.set(xyz, arrowIndex * 18);
+    speedValues.fill(speed, arrowIndex * 6, arrowIndex * 6 + 6);
+    const firstPoint = arrowIndex * 6;
+    lineValues.set([
+      2, firstPoint, firstPoint + 1,
+      2, firstPoint + 2, firstPoint + 3,
+      2, firstPoint + 4, firstPoint + 5,
+    ], arrowIndex * 9);
+    arrowIndex += 1;
+  }
+
+  const points = vtkPoints.newInstance();
+  points.setData(pointValues, 3);
+  const lines = vtkCellArray.newInstance();
+  lines.setData(lineValues);
+  const polyData = vtkPolyData.newInstance();
+  polyData.setPoints(points);
+  polyData.setLines(lines);
+  polyData.getPointData().addArray(vtkDataArray.newInstance({
+    name: 'wave_velocity',
+    numberOfComponents: 1,
+    values: speedValues,
+  }));
+  return polyData;
+}
+
+function emptyMaximumArray(pointCount) {
+  const values = new Float32Array(pointCount);
+  values.fill(Number.NaN);
+  return values;
+}
+
+function resetWaterAnalysisHistory() {
+  const maximumModeWasActive = state.analysis.mode === 'maximumInundation' || state.analysis.mode === 'maximumVelocity';
+  state.analysis.history = null;
+  state.analysis.historyThreshold = null;
+  state.analysis.historyThrough = -1;
+  state.analysis.historyLoadToken += 1;
+  if (maximumModeWasActive) {
+    state.analysis.mode = null;
+    removeWaterAnalysisActor();
+    syncWaterAnalysisControls();
+    syncWaterActorVisibility();
+  }
+}
+
+async function readWaterFrameForAnalysis(frameIndex) {
+  const cached = state.frameCache.get(frameIndex);
+  if (cached?.compact && cached.water) return cached.water;
+  return readCompactLayerFrame(state.caseInfo, 'water', frameIndex);
+}
+
+async function ensureWaterAnalysisHistory(targetFrameIndex, container) {
+  const template = state.compact.templates.water;
+  const threshold = Number(state.mThresholds.waterMax);
+  if (!state.analysis.history || state.analysis.historyThreshold !== threshold || targetFrameIndex < state.analysis.historyThrough) {
+    const pointCount = template.pointValues.length / 3;
+    state.analysis.history = {
+      inundationDepth: emptyMaximumArray(pointCount),
+      inundationZ: emptyMaximumArray(pointCount),
+      velocitySpeed: emptyMaximumArray(pointCount),
+      velocityZ: emptyMaximumArray(pointCount),
+    };
+    state.analysis.historyThreshold = threshold;
+    state.analysis.historyThrough = -1;
+  }
+
+  const token = ++state.analysis.historyLoadToken;
+  const history = state.analysis.history;
+  const seaLevel = getSeaLevel();
+  const dryTolerance = getWaterDryTolerance();
+
+  for (let frameIndex = state.analysis.historyThrough + 1; frameIndex <= targetFrameIndex; frameIndex += 1) {
+    if (token !== state.analysis.historyLoadToken) return false;
+    if (frameIndex === 0 || frameIndex === targetFrameIndex || frameIndex % 8 === 0) {
+      setStatus(container, `Accumulating water analysis through frame ${frameIndex + 1}/${targetFrameIndex + 1}...`);
+    }
+    const frame = await readWaterFrameForAnalysis(frameIndex);
+    const waterPoints = compactPointMaskFromCellPredicate(template, getWaterCellPredicate(frame));
+    const inundatedPoints = compactPointMaskFromCellPredicate(
+      template,
+      getWaterCellPredicate(frame, (pointId) => {
+        const h = Number(frame.h[pointId]);
+        const z = Number(frame.z[pointId]);
+        return Number.isFinite(h) && Number.isFinite(z) && h > dryTolerance && z - h >= seaLevel;
+      })
+    );
+
+    for (let pointId = 0; pointId < waterPoints.length; pointId += 1) {
+      if (waterPoints[pointId]) {
+        const speed = Math.hypot(Number(frame.u[pointId]), Number(frame.v[pointId]));
+        if (Number.isFinite(speed) && (!Number.isFinite(history.velocitySpeed[pointId]) || speed > history.velocitySpeed[pointId])) {
+          history.velocitySpeed[pointId] = speed;
+          history.velocityZ[pointId] = frame.z[pointId];
+        }
+      }
+      if (inundatedPoints[pointId]) {
+        const depth = Number(frame.h[pointId]);
+        if (!Number.isFinite(history.inundationDepth[pointId]) || depth > history.inundationDepth[pointId]) {
+          history.inundationDepth[pointId] = depth;
+          history.inundationZ[pointId] = frame.z[pointId];
+        }
+      }
+    }
+    state.analysis.historyThrough = frameIndex;
+  }
+  return token === state.analysis.historyLoadToken;
+}
+
+function removeWaterAnalysisActor() {
+  if (state.actors.waterAnalysis) {
+    state.renderer?.removeActor(state.actors.waterAnalysis);
+  }
+  state.actors.waterAnalysis = null;
+  state.scalarInfo.waterAnalysis = null;
+}
+
+function syncWaterAnalysisControls() {
+  const mode = state.analysis.mode;
+  const inundationToggle = document.getElementById('toggle-inundation');
+  const velocityToggle = document.getElementById('toggle-velocity');
+  const maxInundation = document.getElementById('show-max-inundation');
+  const maxVelocity = document.getElementById('show-max-velocity');
+  if (inundationToggle) inundationToggle.checked = mode === 'inundation';
+  if (velocityToggle) velocityToggle.checked = mode === 'velocity';
+  maxInundation?.setAttribute('aria-pressed', String(mode === 'maximumInundation'));
+  maxVelocity?.setAttribute('aria-pressed', String(mode === 'maximumVelocity'));
+}
+
+function syncWaterActorVisibility() {
+  const checked = Boolean(document.getElementById('toggle-water')?.checked ?? true);
+  state.actors.water?.setVisibility(checked && !state.analysis.mode);
+  state.actors.waterAnalysis?.setVisibility(checked && Boolean(state.analysis.mode));
+}
+
+function renderWaterAnalysisOverlay() {
+  removeWaterAnalysisActor();
+  const mode = state.analysis.mode;
+  if (!mode) {
+    syncWaterActorVisibility();
+    updateWaterColorbar();
+    state.renderWindow?.render();
+    return;
+  }
+
+  let polyData;
+  let scalarName;
+  let colorStops;
+  let fixedRange;
+  let lineWidth = null;
+  if (mode === 'inundation') {
+    polyData = createCurrentInundationDataset();
+    scalarName = 'inundation_depth';
+    fixedRange = getWaterOverlayRange('inundation');
+    colorStops = getInundationColorStops(fixedRange);
+  } else if (mode === 'maximumInundation') {
+    polyData = createMaximumInundationDataset();
+    scalarName = 'maximum_inundation_depth';
+    fixedRange = getWaterOverlayRange('inundation');
+    colorStops = getInundationColorStops(fixedRange);
+  } else if (mode === 'velocity') {
+    polyData = createVelocityArrowDataset();
+    scalarName = 'wave_velocity';
+    fixedRange = getWaterOverlayRange('velocity');
+    colorStops = TURBO_COLOR_STOPS;
+    lineWidth = 2.0;
+  } else {
+    polyData = createMaximumVelocityDataset();
+    scalarName = 'maximum_wave_velocity';
+    fixedRange = getWaterOverlayRange('velocity');
+    colorStops = CMOCEAN_SPEED_COLOR_STOPS;
+  }
+
+  const { actor, scalarInfo } = createScalarActor(
+    polyData,
+    [scalarName],
+    colorStops,
+    [0.18, 0.62, 0.86],
+    ANALYSIS_SURFACE_OPACITY,
+    { fixedRange }
+  );
+  if (lineWidth !== null) actor.getProperty().setLineWidth?.(lineWidth);
+  state.actors.waterAnalysis = actor;
+  state.scalarInfo.waterAnalysis = scalarInfo;
+  state.renderer?.addActor(actor);
+  syncWaterActorVisibility();
+  updateWaterColorbar();
+  state.renderer?.resetCameraClippingRange();
+  state.renderWindow?.render();
+}
+
+async function activateWaterAnalysisMode(mode, container) {
+  if (mode && !waterAnalysisIsAvailable()) {
+    setStatus(container, 'Water analysis fields are unavailable. Re-export compact assets with h / u / v arrays.', true);
+    return;
+  }
+  stopPlayback();
+  if (mode === 'maximumInundation' || mode === 'maximumVelocity') {
+    const ready = await ensureWaterAnalysisHistory(state.currentFrameIndex, container);
+    if (!ready) return;
+  }
+  state.analysis.mode = mode;
+  syncWaterAnalysisControls();
+  renderWaterAnalysisOverlay();
+  const label = {
+    inundation: 'current-frame inundation depth',
+    maximumInundation: `maximum inundation depth through frame ${state.currentFrameIndex + 1}`,
+    velocity: 'current-frame velocity arrows',
+    maximumVelocity: `maximum wave velocity through frame ${state.currentFrameIndex + 1}`,
+  }[mode];
+  setStatus(container, label ? `Showing ${label}.` : `Showing water surface for ${getFrameLabel(state.caseInfo, state.currentFrameIndex)}.`);
+}
+
+function refreshCurrentWaterAnalysisOverlay() {
+  if (state.analysis.mode === 'inundation' || state.analysis.mode === 'velocity') {
+    renderWaterAnalysisOverlay();
+  }
 }
 
 function setupScene(host) {
@@ -1143,9 +1672,48 @@ const MAGMA_COLOR_STOPS = [
   [1.00, 0.99, 0.99, 0.65],
 ];
 
+const TURBO_COLOR_STOPS = [
+  [0.000, 0.190, 0.072, 0.232],
+  [0.125, 0.276, 0.421, 0.891],
+  [0.250, 0.158, 0.736, 0.923],
+  [0.375, 0.197, 0.949, 0.595],
+  [0.500, 0.644, 0.990, 0.234],
+  [0.625, 0.933, 0.812, 0.227],
+  [0.750, 0.984, 0.493, 0.128],
+  [0.875, 0.816, 0.185, 0.018],
+  [1.000, 0.480, 0.016, 0.011],
+];
+
+const CMOCEAN_SPEED_COLOR_STOPS = [
+  [0.000, 1.000, 0.991, 0.804],
+  [0.167, 0.882, 0.806, 0.450],
+  [0.333, 0.668, 0.674, 0.127],
+  [0.500, 0.373, 0.571, 0.048],
+  [0.667, 0.095, 0.449, 0.156],
+  [0.833, 0.079, 0.294, 0.165],
+  [1.000, 0.091, 0.137, 0.073],
+];
+
+const INUNDATION_CLASS_COLORS = [
+  [0.749, 0.937, 0.949],
+  [0.843, 0.498, 0.827],
+  [0.357, 0.384, 0.839],
+  [0.271, 0.780, 0.831],
+  [0.306, 0.812, 0.353],
+  [0.941, 0.863, 0.310],
+  [0.953, 0.604, 0.267],
+  [0.659, 0.286, 0.286],
+];
+
 const WATER_COLOR_STOPS = TSUNAMI_COLOR_STOPS;
 const WATER_DISPLAY_RANGE_FRACTION = 1.0 / 10.0;
 const WATER_SURFACE_OPACITY = 1.0;
+const ANALYSIS_SURFACE_OPACITY = 0.94;
+const ANALYSIS_SURFACE_LIFT = 0.04;
+const VELOCITY_ARROW_STRIDE = 1;
+const VELOCITY_ARROW_SCALE = 10.0;
+const VELOCITY_ARROW_MAX_COUNT = 20000;
+const VELOCITY_ARROW_MIN_SPEED = 0.01;
 const LANDSLIDE_COLOR_STOPS = {
   hm: MAGMA_COLOR_STOPS,
   m: MAGMA_COLOR_STOPS,
@@ -1352,7 +1920,30 @@ function updateColorbar({ idPrefix, title, scalarInfo, colorStops, showZeroTick 
 }
 
 function updateWaterColorbar() {
-  const statsRange = getWaterStatisticsRange();
+  const mode = state.analysis.mode;
+  if (mode) {
+    const title = {
+      inundation: 'Inundation depth relative to sea level (m)',
+      maximumInundation: 'Maximum inundation depth (m)',
+      velocity: 'Wave velocity arrows (m/s)',
+      maximumVelocity: 'Maximum wave velocity (m/s)',
+    }[mode];
+    const colorStops = mode === 'velocity'
+      ? TURBO_COLOR_STOPS
+      : mode === 'maximumVelocity'
+        ? CMOCEAN_SPEED_COLOR_STOPS
+        : getInundationColorStops();
+    updateColorbar({
+      idPrefix: 'water',
+      title,
+      scalarInfo: state.scalarInfo.waterAnalysis,
+      colorStops,
+    });
+    const analysisRange = state.scalarInfo.waterAnalysis?.rawRange;
+    const rangeEl = document.getElementById('water-colorbar-range');
+    if (rangeEl) rangeEl.textContent = analysisRange ? `current ${formatRange(analysisRange)}` : '';
+    return;
+  }
 
   updateColorbar({
     idPrefix: 'water',
@@ -1362,12 +1953,9 @@ function updateWaterColorbar() {
     showZeroTick: true,
   });
 
-  if (statsRange) {
-    const fullText = `${getWaterStatisticsLabel()} ${formatRange(statsRange)}`;
-    const rangeEl = document.getElementById('water-colorbar-range');
-    if (rangeEl) rangeEl.textContent = fullText;
-    setLegendReadout('water-scalar-readout', `wave_amplitude ${fullText}`);
-  }
+  const actualRange = getCurrentVisibleWaveRange();
+  const rangeEl = document.getElementById('water-colorbar-range');
+  if (rangeEl) rangeEl.textContent = actualRange ? `current ${formatRange(actualRange)}` : '';
 }
 
 function updateLandslideColorbar(scalarName = 'hm') {
@@ -1660,6 +2248,7 @@ function applyMThresholdInputs(container) {
 
   state.mThresholds.waterMax = waterValue;
   state.mThresholds.landslideMin = landslideValue;
+  resetWaterAnalysisHistory();
 
   if (waterInput) waterInput.value = String(waterValue);
   if (landslideInput) landslideInput.value = String(landslideValue);
@@ -1848,11 +2437,6 @@ function addActors(terrain, water, landslide) {
   resetCamera();
 
   setLegendReadout(
-    'water-scalar-readout',
-    waterScalarInfo ? `${waterScalarInfo.name} ${formatRange(waterScalarInfo.range)}` : 'solid'
-  );
-
-  setLegendReadout(
     'landslide-scalar-readout',
     landslideScalarInfo ? `${landslideScalarInfo.name} ${formatRange(landslideScalarInfo.range)}` : 'solid'
   );
@@ -1914,13 +2498,11 @@ function updateCurrentFrameActors() {
   });
 
   state.scalarInfo.water = waterScalarInfo;
-  setLegendReadout(
-    'water-scalar-readout',
-    waterScalarInfo ? `${waterScalarInfo.name} ${formatRange(waterScalarInfo.range)}` : 'solid'
-  );
   updateWaterColorbar();
 
   applyLandslideScalar(state.activeLandslideScalar);
+  refreshCurrentWaterAnalysisOverlay();
+  syncWaterActorVisibility();
 
   state.renderer?.resetCameraClippingRange();
   state.renderWindow?.render();
@@ -1937,6 +2519,13 @@ async function requestFrame(frameIndex, container) {
   if (k === state.currentFrameIndex && state.datasets.water && state.datasets.landslide) {
     updateFrameReadout();
     return;
+  }
+
+  if (state.analysis.mode === 'maximumInundation' || state.analysis.mode === 'maximumVelocity') {
+    state.analysis.mode = null;
+    removeWaterAnalysisActor();
+    syncWaterAnalysisControls();
+    syncWaterActorVisibility();
   }
 
   state.isFrameLoading = true;
@@ -2009,7 +2598,7 @@ function setupControls(container) {
   });
 
   container.querySelector('#toggle-water')?.addEventListener('change', (event) => {
-    state.actors.water?.setVisibility(event.target.checked);
+    syncWaterActorVisibility();
     state.renderWindow.render();
   });
 
@@ -2062,6 +2651,30 @@ function setupControls(container) {
   container.querySelector('#reset-camera')?.addEventListener('click', () => {
     resetCamera();
   });
+
+  const analysisAvailable = waterAnalysisIsAvailable();
+  const inundationToggle = container.querySelector('#toggle-inundation');
+  const velocityToggle = container.querySelector('#toggle-velocity');
+  const maxInundationButton = container.querySelector('#show-max-inundation');
+  const maxVelocityButton = container.querySelector('#show-max-velocity');
+  for (const control of [inundationToggle, velocityToggle, maxInundationButton, maxVelocityButton]) {
+    if (control) control.disabled = !analysisAvailable;
+  }
+  inundationToggle?.addEventListener('change', (event) => {
+    activateWaterAnalysisMode(event.target.checked ? 'inundation' : null, container).catch(console.error);
+  });
+  velocityToggle?.addEventListener('change', (event) => {
+    activateWaterAnalysisMode(event.target.checked ? 'velocity' : null, container).catch(console.error);
+  });
+  maxInundationButton?.addEventListener('click', () => {
+    const nextMode = state.analysis.mode === 'maximumInundation' ? null : 'maximumInundation';
+    activateWaterAnalysisMode(nextMode, container).catch(console.error);
+  });
+  maxVelocityButton?.addEventListener('click', () => {
+    const nextMode = state.analysis.mode === 'maximumVelocity' ? null : 'maximumVelocity';
+    activateWaterAnalysisMode(nextMode, container).catch(console.error);
+  });
+  syncWaterAnalysisControls();
 
   const controls = container.querySelector('.manta-viewer-controls');
   if (controls) {
@@ -2135,7 +2748,7 @@ function ensureMapOverlayCss() {
     .manta-map-compass {
       position: absolute;
       left: 18px;
-      bottom: 86px;
+      bottom: 132px;
       z-index: 26;
       width: 118px;
       height: 118px;
@@ -2204,7 +2817,7 @@ function ensureMapOverlayCss() {
     .manta-map-scale {
       position: absolute;
       right: 18px;
-      bottom: 86px;
+      bottom: 132px;
       z-index: 26;
       min-width: 170px;
       padding: 8px 10px 7px;

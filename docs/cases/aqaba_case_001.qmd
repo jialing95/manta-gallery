@@ -34,6 +34,7 @@ Aqaba LSB C10 is an interactive 3D D-Claw landslide-tsunami case for the Gulf of
 | Water coastal detail | Native resolution (`stride = 0`) within `100 m` offshore and `500 m` inland from the `z = 0` coastline |
 | Landslide stride | Native resolution (`0`) |
 | Browser asset format | Compact v2: static `X / Y / quad topology` templates plus gzip-compressed per-frame arrays |
+| Water dynamic arrays | `z / wave_amplitude / m / h / u / v` as `Float32`; `b = z - h` and speed are derived in the browser |
 | Dynamic array precision | `Float32` |
 | Terrain reuse | Single static `terrain.vtp` reused across frames; DEM is not regenerated or updated online during playback. |
 | Landslide ROI | Global union over all `72` frames |
@@ -50,7 +51,9 @@ Aqaba LSB C10 is an interactive 3D D-Claw landslide-tsunami case for the Gulf of
 |---|---|
 | DEM bathymetry | Sea-split target: `cmocean.deep`; currently kept as a static gray relief surface. |
 | DEM topography | Sea-split target: `cmcrameri.grayC + relief / hillshade`; terrain is exported at higher resolution than water frames. |
-| Water surface | Scalar = `wave_amplitude`; colorbar and colors use a robust symmetric ocean-water range (`99.9`th percentile of absolute amplitude with default `m <= 0.3`). Inland free-surface geometry remains available for inundation detail without allowing high-ground elevations to stretch the wave-height scale. Surface opacity = `1.0`. |
+| Water surface | Scalar = `wave_amplitude`; colors use a stable robust symmetric ocean-water range, while the colorbar header reports the true current-frame range after the active `water m` filter. Inland free-surface geometry remains available for inundation detail. Surface opacity = `1.0`. |
+| Inundation overlays | Current-frame and cumulative-maximum inland inundation depth where `b >= 0`, filtered by the active `water m` threshold. |
+| Velocity overlays | Current-frame `turbo` velocity arrows and cumulative-maximum wave velocity using `cmocean.speed`, filtered by the active `water m` threshold. |
 | Landslide | Scalar selector = `hm / m / Δb`; colormap = `magma`. |
 
 </details>

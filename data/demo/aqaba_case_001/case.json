@@ -230,9 +230,24 @@
               "byte_offset": 8237392,
               "length": 1029672
             },
+            "h": {
+              "dtype": "float32",
+              "byte_offset": 12356080,
+              "length": 1029672
+            },
+            "u": {
+              "dtype": "float32",
+              "byte_offset": 16474768,
+              "length": 1029672
+            },
+            "v": {
+              "dtype": "float32",
+              "byte_offset": 20593456,
+              "length": 1029672
+            },
             "valid_cells": {
               "dtype": "uint8",
-              "byte_offset": 12356080,
+              "byte_offset": 24712144,
               "length": 124825,
               "bit_order": "big"
             }
@@ -274,6 +289,39 @@
             -99.98737335205078,
             99.99932861328125
           ]
+        }
+      },
+      "analysis_overlays": {
+        "inundation": {
+          "scalar": "h",
+          "label": "Inundation depth relative to sea level",
+          "unit": "m",
+          "condition": "b >= sea_level, where b = z - h",
+          "water_m_bound": true,
+          "range": [
+            0.0005000013625249267,
+            40.853416442871094
+          ],
+          "colormap": "fgmax_inundation_depth_classes"
+        },
+        "velocity": {
+          "components": [
+            "u",
+            "v"
+          ],
+          "label": "Wave velocity",
+          "unit": "m/s",
+          "water_m_bound": true,
+          "range": [
+            0.0,
+            39.214534759521484
+          ],
+          "arrow_colormap": "turbo",
+          "maximum_colormap": "cmocean.speed",
+          "arrow_stride": 1,
+          "arrow_scale": 10.0,
+          "arrow_max_count": 20000,
+          "arrow_min_speed": 0.01
         }
       }
     },
