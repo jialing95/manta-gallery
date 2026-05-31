@@ -84,8 +84,12 @@ const state = {
     enabled: false,
     loading: false,
     token: 0,
-    providerId: 'opentopomap',
+    providerId: 'esri_world_imagery_labels',
     attribution: '',
+  },
+  terrainDrape: {
+    source: null,
+    sampler: null,
   },
   amrCache: new Map(),
   amrVisible: false,
@@ -537,13 +541,9 @@ function setupDom(container) {
       <label title="Choose the online basemap provider used by the Map button.">
         Map source:
         <select id="map-provider">
-          <option value="opentopomap" selected>OpenStreetMap Topographic</option>
+          <option value="esri_world_imagery_labels" selected>Esri Imagery + Labels</option>
+          <option value="opentopomap">OpenStreetMap Topographic</option>
           <option value="esri_world_street">Esri Streets</option>
-          <option value="esri_world_imagery_labels">Esri Imagery + Labels</option>
-          <option value="esri_world_topo">Esri Topo</option>
-          <option value="carto_voyager">CARTO Voyager</option>
-          <option value="carto_light">CARTO Light</option>
-          <option value="osm_standard">OpenStreetMap</option>
         </select>
       </label>
       <label><input type="checkbox" id="toggle-water" checked> Water</label>
@@ -1223,6 +1223,173 @@ function compactBitIsSet(bits, index) {
   return (bits[index >> 3] & (1 << (7 - (index & 7)))) !== 0;
 }
 
+const TERRAIN_DRAPE_LOOKUP_SCALE = 1000;
+const TERRAIN_DRAPE_COORD_TOLERANCE = 1 / TERRAIN_DRAPE_LOOKUP_SCALE;
+
+function terrainDrapeKey(value) {
+  return Math.round(Number(value) * TERRAIN_DRAPE_LOOKUP_SCALE);
+}
+
+function lowerBound(values, target) {
+  let lo = 0;
+  let hi = values.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (values[mid] < target) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+function bracketSortedValue(values, target) {
+  if (!values?.length || !Number.isFinite(target)) return null;
+  const min = values[0];
+  const max = values[values.length - 1];
+  if (target < min - TERRAIN_DRAPE_COORD_TOLERANCE || target > max + TERRAIN_DRAPE_COORD_TOLERANCE) {
+    return null;
+  }
+  if (target <= min) return { lo: 0, hi: 0, t: 0 };
+  if (target >= max) {
+    const last = values.length - 1;
+    return { lo: last, hi: last, t: 0 };
+  }
+  const upper = lowerBound(values, target);
+  if (upper <= 0) return { lo: 0, hi: 0, t: 0 };
+  if (upper >= values.length) {
+    const last = values.length - 1;
+    return { lo: last, hi: last, t: 0 };
+  }
+  if (values[upper] === target) return { lo: upper, hi: upper, t: 0 };
+  const lo = upper - 1;
+  const x0 = values[lo];
+  const x1 = values[upper];
+  const span = x1 - x0;
+  return {
+    lo,
+    hi: upper,
+    t: span > 0 ? (target - x0) / span : 0,
+  };
+}
+
+function terrainGridValue(sampler, xIndex, yIndex) {
+  const value = sampler.zValues[yIndex * sampler.xValues.length + xIndex];
+  return Number.isFinite(value) ? value : Number.NaN;
+}
+
+function interpolateTerrainGrid(sampler, x, y) {
+  const xb = bracketSortedValue(sampler.xValues, x);
+  const yb = bracketSortedValue(sampler.yValues, y);
+  if (!xb || !yb) return Number.NaN;
+
+  const z00 = terrainGridValue(sampler, xb.lo, yb.lo);
+  if (xb.lo === xb.hi && yb.lo === yb.hi) return z00;
+
+  const z10 = terrainGridValue(sampler, xb.hi, yb.lo);
+  const z01 = terrainGridValue(sampler, xb.lo, yb.hi);
+  const z11 = terrainGridValue(sampler, xb.hi, yb.hi);
+  const corners = [
+    { z: z00, w: (1 - xb.t) * (1 - yb.t) },
+    { z: z10, w: xb.t * (1 - yb.t) },
+    { z: z01, w: (1 - xb.t) * yb.t },
+    { z: z11, w: xb.t * yb.t },
+  ];
+
+  let weighted = 0;
+  let weightSum = 0;
+  for (const corner of corners) {
+    if (!Number.isFinite(corner.z) || corner.w <= 0) continue;
+    weighted += corner.z * corner.w;
+    weightSum += corner.w;
+  }
+  return weightSum > 0 ? weighted / weightSum : Number.NaN;
+}
+
+function createTerrainDrapeSampler(points) {
+  const xByKey = new Map();
+  const yByKey = new Map();
+  for (let i = 0; i < points.length; i += 3) {
+    const x = points[i];
+    const y = points[i + 1];
+    const z = points[i + 2];
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) continue;
+    xByKey.set(terrainDrapeKey(x), x);
+    yByKey.set(terrainDrapeKey(y), y);
+  }
+
+  const xKeys = Array.from(xByKey.keys()).sort((a, b) => a - b);
+  const yKeys = Array.from(yByKey.keys()).sort((a, b) => a - b);
+  const xIndexByKey = new Map(xKeys.map((key, index) => [key, index]));
+  const yIndexByKey = new Map(yKeys.map((key, index) => [key, index]));
+  const xValues = Float64Array.from(xKeys, (key) => xByKey.get(key));
+  const yValues = Float64Array.from(yKeys, (key) => yByKey.get(key));
+  const zValues = new Float32Array(xValues.length * yValues.length);
+  zValues.fill(Number.NaN);
+
+  for (let i = 0; i < points.length; i += 3) {
+    const x = points[i];
+    const y = points[i + 1];
+    const z = points[i + 2];
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) continue;
+    const xi = xIndexByKey.get(terrainDrapeKey(x));
+    const yi = yIndexByKey.get(terrainDrapeKey(y));
+    if (xi === undefined || yi === undefined) continue;
+    zValues[yi * xValues.length + xi] = z;
+  }
+
+  return {
+    xValues,
+    yValues,
+    zValues,
+  };
+}
+
+function getTerrainDrapeSampler() {
+  const terrain = state.datasets.terrain;
+  const points = terrain?.getPoints?.()?.getData?.();
+  if (!terrain || !points) return null;
+  if (state.terrainDrape.source === terrain && state.terrainDrape.sampler) {
+    return state.terrainDrape.sampler;
+  }
+  const sampler = createTerrainDrapeSampler(points);
+  state.terrainDrape.source = terrain;
+  state.terrainDrape.sampler = sampler;
+  return sampler;
+}
+
+function compactPointHasFiniteZ(template, pointId) {
+  return Number.isFinite(template.pointValues[pointId * 3 + 2]);
+}
+
+function getCompactTemplateTerrainZ(template, terrainSampler) {
+  if (!terrainSampler) return null;
+  const pointCount = template.pointValues.length / 3;
+  if (
+    template.terrainDrapeSampler === terrainSampler
+      && template.terrainDrapeZ?.length === pointCount
+  ) {
+    return template.terrainDrapeZ;
+  }
+
+  const terrainZ = new Float32Array(pointCount);
+  for (let pointId = 0; pointId < pointCount; pointId += 1) {
+    const base = pointId * 3;
+    terrainZ[pointId] = interpolateTerrainGrid(
+      terrainSampler,
+      template.pointValues[base],
+      template.pointValues[base + 1]
+    );
+  }
+  template.terrainDrapeSampler = terrainSampler;
+  template.terrainDrapeZ = terrainZ;
+  return terrainZ;
+}
+
+function getCompactPointRenderZ(layerName, frameArrays, pointId, terrainZ) {
+  if (layerName !== 'landslide') return frameArrays.z[pointId];
+  if (!terrainZ) return frameArrays.z[pointId];
+  return Number.isFinite(terrainZ[pointId]) ? terrainZ[pointId] : Number.NaN;
+}
+
 function compactMPointPredicate(layerName) {
   if (layerName === 'water') {
     const threshold = Number(state.mThresholds.waterMax);
@@ -1275,7 +1442,11 @@ function compactCellPassesM(
   const base = cellIndex * 4;
   const quads = template.quads;
   const m = frameArrays.m;
-  return keepPoint(m[quads[base]])
+  return compactPointHasFiniteZ(template, quads[base])
+    && compactPointHasFiniteZ(template, quads[base + 1])
+    && compactPointHasFiniteZ(template, quads[base + 2])
+    && compactPointHasFiniteZ(template, quads[base + 3])
+    && keepPoint(m[quads[base]])
     && keepPoint(m[quads[base + 1]])
     && keepPoint(m[quads[base + 2]])
     && keepPoint(m[quads[base + 3]]);
@@ -1344,8 +1515,17 @@ function updateCompactLayerDataset(layerName, frameArrays) {
     throw new Error(`Compact-v2 ${layerName} frame z length does not match its template.`);
   }
 
+  const terrainSampler = layerName === 'landslide' ? getTerrainDrapeSampler() : null;
+  const terrainZ = layerName === 'landslide'
+    ? getCompactTemplateTerrainZ(template, terrainSampler)
+    : null;
   for (let i = 0; i < z.length; i += 1) {
-    template.pointValues[i * 3 + 2] = z[i];
+    template.pointValues[i * 3 + 2] = getCompactPointRenderZ(
+      layerName,
+      frameArrays,
+      i,
+      terrainZ
+    );
   }
   template.points.dataChange?.();
   template.points.modified?.();
@@ -2083,7 +2263,7 @@ const MAP_OVERLAY_LIFT = 0.60;
 const MAP_TEXTURE_INTERPOLATE = false;
 const WATER_RENDER_LIFT = 0.90;
 const WATER_ANALYSIS_RENDER_LIFT = 1.00;
-const LANDSLIDE_RENDER_LIFT = 1.25;
+const LANDSLIDE_RENDER_LIFT = 5.00;
 const LANDSLIDE_COLOR_STOPS = {
   hm: MAGMA_COLOR_STOPS,
   m: MAGMA_COLOR_STOPS,
@@ -2091,6 +2271,16 @@ const LANDSLIDE_COLOR_STOPS = {
 };
 
 const MAP_TILE_PROVIDERS = {
+  esri_world_imagery_labels: {
+    label: 'Esri World Imagery + Labels',
+    layers: [
+      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+    ],
+    minZoom: 0,
+    maxZoom: 19,
+    attribution: 'Imagery and labels © Esri',
+  },
   opentopomap: {
     label: 'OpenStreetMap Topographic (OpenTopoMap)',
     url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
@@ -2105,47 +2295,6 @@ const MAP_TILE_PROVIDERS = {
     minZoom: 0,
     maxZoom: 19,
     attribution: 'Tiles © Esri',
-  },
-  esri_world_imagery_labels: {
-    label: 'Esri World Imagery + Labels',
-    layers: [
-      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-      'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
-    ],
-    minZoom: 0,
-    maxZoom: 19,
-    attribution: 'Imagery and labels © Esri',
-  },
-  esri_world_topo: {
-    label: 'Esri World Topographic Map',
-    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
-    minZoom: 0,
-    maxZoom: 19,
-    attribution: 'Tiles © Esri',
-  },
-  carto_voyager: {
-    label: 'CARTO Voyager',
-    url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png',
-    subdomains: ['a', 'b', 'c', 'd'],
-    minZoom: 0,
-    maxZoom: 20,
-    attribution: 'Tiles © CARTO, © OpenStreetMap contributors',
-  },
-  carto_light: {
-    label: 'CARTO Light',
-    url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
-    subdomains: ['a', 'b', 'c', 'd'],
-    minZoom: 0,
-    maxZoom: 20,
-    attribution: 'Tiles © CARTO, © OpenStreetMap contributors',
-  },
-  osm_standard: {
-    label: 'OpenStreetMap',
-    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-    subdomains: ['a', 'b', 'c'],
-    minZoom: 0,
-    maxZoom: 19,
-    attribution: 'Tiles © OpenStreetMap contributors',
   },
 };
 
@@ -2878,7 +3027,7 @@ async function buildMapMosaicForProvider(providerId, bbox, zoom) {
 
 async function buildMapMosaic(bbox, zoom) {
   const preferred = state.mapOverlay.providerId;
-  const providerIds = [preferred, 'opentopomap', 'esri_world_street', 'esri_world_imagery_labels', 'carto_voyager', 'esri_world_topo', 'carto_light', 'osm_standard']
+  const providerIds = [preferred, 'esri_world_imagery_labels', 'opentopomap', 'esri_world_street']
     .filter((value, index, values) => value && values.indexOf(value) === index);
   let lastError = null;
   for (const providerId of providerIds) {

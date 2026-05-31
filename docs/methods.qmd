@@ -36,13 +36,11 @@ saturation limit.
 
 The optional `Map` button fetches online map tiles on demand, builds a raster
 mosaic, and texture-maps it onto the static terrain mesh. The map source selector
-currently offers OpenStreetMap Topographic (OpenTopoMap), Esri Streets, Esri
-Imagery + Labels, Esri Topo, CARTO Voyager, CARTO Light, and OpenStreetMap.
-OpenStreetMap Topographic is the default because it matches the clear 3D
-topographic overlay used in the preprocessor. The current Aqaba export declares
-`EPSG:32637` (`WGS 84 / UTM zone 37N`), and the browser computes texture
-coordinates through a `UTM -> Web Mercator` transform to avoid visible basemap
-offset while keeping labels sharper than per-vertex color sampling.
+offers Esri Imagery + Labels, OpenStreetMap Topographic (OpenTopoMap), and Esri
+Streets, in that order. Esri Imagery + Labels is the default. The current Aqaba
+export declares `EPSG:32637` (`WGS 84 / UTM zone 37N`), and the browser computes
+texture coordinates through a `UTM -> Web Mercator` transform to avoid visible
+basemap offset while keeping labels sharper than per-vertex color sampling.
 
 ### Landslide material
 
