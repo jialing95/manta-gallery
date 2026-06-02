@@ -2265,6 +2265,7 @@ const INUNDATION_CLASS_COLORS = [
 
 const WATER_COLOR_STOPS = TSUNAMI_COLOR_STOPS;
 const WATER_DISPLAY_RANGE_FRACTION = 1.0 / 10.0;
+const WATER_SYMLOG_LINTHRESH_FRACTION = 1.0 / 100.0;
 const WATER_SURFACE_OPACITY = 1.0;
 const ANALYSIS_SURFACE_OPACITY = 0.94;
 const ANALYSIS_SURFACE_LIFT = 0.04;
@@ -2444,12 +2445,50 @@ function resolveDisplayRange({
   return zeroCenteredRangeIfNeeded(arrayName, rawRange);
 }
 
-function createTransferFunction(range, stops) {
+function symlogLinThreshold(range) {
+  const clean = finitePairRange(range);
+  if (!clean) return 1e-12;
+  const limit = Math.max(Math.abs(clean[0]), Math.abs(clean[1]), 1e-12);
+  return Math.max(limit * WATER_SYMLOG_LINTHRESH_FRACTION, 1e-12);
+}
+
+function symlogTransform(value, linthresh) {
+  const magnitude = Math.log1p(Math.abs(value) / linthresh);
+  return Math.sign(value) * magnitude;
+}
+
+function symlogInverse(transformed, linthresh) {
+  const magnitude = linthresh * Math.expm1(Math.abs(transformed));
+  return Math.sign(transformed) * magnitude;
+}
+
+function createValueNormalizer(range, normalization = 'linear') {
+  const [vmin, vmax] = range;
+  if (normalization !== 'symlog') {
+    return {
+      normalize: (value) => (value - vmin) / (vmax - vmin),
+      denormalize: (position) => vmin + position * (vmax - vmin),
+    };
+  }
+
+  const linthresh = symlogLinThreshold(range);
+  const tmin = symlogTransform(vmin, linthresh);
+  const tmax = symlogTransform(vmax, linthresh);
+  const span = Math.max(tmax - tmin, 1e-12);
+
+  return {
+    normalize: (value) => clamp01((symlogTransform(value, linthresh) - tmin) / span),
+    denormalize: (position) => symlogInverse(tmin + clamp01(position) * span, linthresh),
+  };
+}
+
+function createTransferFunction(range, stops, normalization = 'linear') {
   const ctf = vtkColorTransferFunction.newInstance();
   const [vmin, vmax] = range;
+  const normalizer = createValueNormalizer(range, normalization);
 
   for (const [position, red, green, blue] of stops) {
-    const value = vmin + position * (vmax - vmin);
+    const value = normalizer.denormalize(position);
     ctf.addRGBPoint(value, red, green, blue);
   }
 
@@ -2586,6 +2625,30 @@ function renderColorbarTicks(container, ticks, range, classified = false) {
   }
 }
 
+function createSymlogTicks(range) {
+  const clean = finitePairRange(range);
+  if (!clean) return null;
+
+  const [vmin, vmax] = clean;
+  const normalizer = createValueNormalizer(clean, 'symlog');
+  const linthresh = symlogLinThreshold(clean);
+  const limit = Math.max(Math.abs(vmin), Math.abs(vmax));
+  const tickValues = [vmin, -10.0 * linthresh, -linthresh, 0.0, linthresh, 10.0 * linthresh, vmax]
+    .filter((value) => value >= vmin && value <= vmax);
+  const uniqueTickValues = [];
+
+  for (const value of tickValues) {
+    if (!uniqueTickValues.some((existing) => Math.abs(existing - value) <= 1e-9 * Math.max(1.0, limit))) {
+      uniqueTickValues.push(value);
+    }
+  }
+
+  return uniqueTickValues.map((value) => ({
+    value,
+    position: normalizer.normalize(value),
+  }));
+}
+
 function updateColorbar({
   idPrefix,
   title,
@@ -2593,6 +2656,7 @@ function updateColorbar({
   colorStops,
   showZeroTick = false,
   classifiedTicks = null,
+  normalization = 'linear',
 }) {
   const container = document.getElementById(`${idPrefix}-colorbar`);
   if (!container) return;
@@ -2615,11 +2679,14 @@ function updateColorbar({
   if (titleEl) titleEl.textContent = title;
   if (rangeEl) rangeEl.textContent = formatRange(scalarInfo.range);
   if (stripEl) stripEl.style.background = stopsToCssGradient(colorStops);
+  const ticks = classifiedTicks
+    ?? (normalization === 'symlog' ? createSymlogTicks(scalarInfo.range) : null)
+    ?? [vmin, midValue, vmax];
   renderColorbarTicks(
     ticksEl,
-    classifiedTicks ?? [vmin, midValue, vmax],
+    ticks,
     scalarInfo.range,
-    Boolean(classifiedTicks)
+    Boolean(classifiedTicks) || normalization === 'symlog'
   );
 }
 
@@ -2659,6 +2726,7 @@ function updateWaterColorbar() {
     scalarInfo: state.scalarInfo.water,
     colorStops: WATER_COLOR_STOPS,
     showZeroTick: true,
+    normalization: 'symlog',
   });
 
   const actualRange = getCurrentVisibleWaveRange();
@@ -2687,6 +2755,7 @@ function applyScalarToActor({
   rangeMode = 'auto',
   robustPercentile = 99.0,
   fixedRange = null,
+  normalization = 'linear',
 }) {
   if (!actor || !polyData) return null;
 
@@ -2719,7 +2788,7 @@ function applyScalarToActor({
     return null;
   }
 
-  const lookupTable = createTransferFunction(range, colorStops);
+  const lookupTable = createTransferFunction(range, colorStops, normalization);
 
   found.attributes.setActiveScalars?.(found.name);
 
@@ -2744,6 +2813,7 @@ function applyScalarToActor({
     association: found.association,
     range,
     rawRange,
+    normalization,
   };
 }
 
@@ -3559,6 +3629,7 @@ function addActors(terrain, water, landslide) {
       fixedRange: getWaterDisplayRange(),
       rangeMode: 'robust-symmetric',
       robustPercentile: 99.0,
+      normalization: 'symlog',
     }
   );
   const { actor: landslideActor, scalarInfo: landslideScalarInfo } = createScalarActor(
@@ -3641,6 +3712,7 @@ function updateCurrentFrameActors() {
     fixedRange: getWaterDisplayRange(),
     rangeMode: 'robust-symmetric',
     robustPercentile: 99.0,
+    normalization: 'symlog',
   });
 
   state.scalarInfo.water = waterScalarInfo;
