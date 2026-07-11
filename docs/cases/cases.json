@@ -1,18 +1,26 @@
 [
   {
-    "id": "aqaba_case_001",
-    "title": "Aqaba LSB C10",
-    "label": "LSB C10",
-    "card_description": "Interactive 3D view of landslide tsunami (case: LSB C10) in the Gulf of Aqaba.",
-    "overview": "Aqaba LSB C10 is an interactive 3D D-Claw landslide-tsunami case for the Gulf of Aqaba. `LSB` denotes Landslide B, and `C10` denotes a contractive landslide mixture with permeability coefficient $10^{-10}$. The viewer combines a static high-resolution topo-bathymetric surface with time-dependent water height and landslide fields for browser-side exploration.",
-    "default_frame_index": 20
+    "id": "aqaba_lsa_c10_angm25",
+    "title": "Aqaba LSA C10 angm25",
+    "label": "LSA C10 angm25",
+    "card_description": "Interactive 3D view of landslide tsunami case AQA_017_K1_C10_angm25_mixed in the Gulf of Aqaba.",
+    "overview": "Aqaba LSA C10 angm25 is an interactive 3D D-Claw landslide-tsunami case for the Gulf of Aqaba, exported from `AQA_017_K1_C10_angm25_mixed`. The viewer combines a static high-resolution topo-bathymetric surface with time-dependent water height and landslide fields for browser-side exploration. This web demo uses every second native output frame to keep the GitHub Pages payload compact while preserving the animation.",
+    "default_frame_index": 10
   },
   {
-    "id": "aqaba_lsa_c10",
-    "title": "Aqaba LSA C10",
-    "label": "LSA C10",
-    "card_description": "Interactive 3D view of landslide tsunami (case: LSA C10) in the Gulf of Aqaba.",
-    "overview": "Aqaba LSA C10 is an interactive 3D D-Claw landslide-tsunami case for the Gulf of Aqaba. The viewer combines a static high-resolution topo-bathymetric surface with time-dependent water height and landslide fields for browser-side exploration.",
-    "default_frame_index": 20
+    "id": "aqaba_lsb_nc10_angm20",
+    "title": "Aqaba LSB NC10 angm20",
+    "label": "LSB NC10 angm20",
+    "card_description": "Interactive 3D view of landslide tsunami case AQA_006_K1_NC10_angm20_mixed in the Gulf of Aqaba.",
+    "overview": "Aqaba LSB NC10 angm20 is an interactive 3D D-Claw landslide-tsunami case for the Gulf of Aqaba, exported from `AQA_006_K1_NC10_angm20_mixed`. The viewer combines a static high-resolution topo-bathymetric surface with time-dependent water height and landslide fields for browser-side exploration. This web demo uses every second native output frame to keep the GitHub Pages payload compact while preserving the animation.",
+    "default_frame_index": 10
+  },
+  {
+    "id": "aqaba_lsc_c10_angm30",
+    "title": "Aqaba LSC C10 angm30",
+    "label": "LSC C10 angm30",
+    "card_description": "Interactive 3D view of landslide tsunami case AQA_018_K1_C10_angm30_mixed in the Gulf of Aqaba.",
+    "overview": "Aqaba LSC C10 angm30 is an interactive 3D D-Claw landslide-tsunami case for the Gulf of Aqaba, exported from `AQA_018_K1_C10_angm30_mixed`. The viewer combines a static high-resolution topo-bathymetric surface with time-dependent water height and landslide fields for browser-side exploration. This web demo uses every second native output frame to keep the GitHub Pages payload compact while preserving the animation.",
+    "default_frame_index": 10
   }
 ]

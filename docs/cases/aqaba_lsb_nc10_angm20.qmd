@@ -1,0 +1,61 @@
+---
+title: "Aqaba LSB NC10 angm20"
+page-layout: full
+toc: false
+---
+
+::: {.manta-case-intro}
+## Overview
+
+Aqaba LSB NC10 angm20 is an interactive 3D D-Claw landslide-tsunami case for the Gulf of Aqaba, exported from `AQA_006_K1_NC10_angm20_mixed`. The viewer combines a static high-resolution topo-bathymetric surface with time-dependent water height and landslide fields for browser-side exploration. This web demo uses every second native output frame to keep the GitHub Pages payload compact while preserving the animation.
+:::
+
+::: {.manta-case-hero}
+```{=html}
+<div id="aqaba_lsb_nc10_angm20-viewer" class="manta-viewer" data-case-base-url="../assets/data/demo/aqaba_lsb_nc10_angm20/" data-case-title="Aqaba LSB NC10 angm20">
+  <div class="manta-viewer-status">
+    Loading MANTA Gallery viewer...
+  </div>
+</div>
+<script type="module" src="../assets/js/manta_case_viewer.bundle.js"></script>
+```
+:::
+
+<details class="manta-foldout">
+<summary>Current export settings</summary>
+
+| Item | Value |
+|---|---|
+| Source | FORT-native |
+| Default display frame | `10` |
+| Frame count | all exported time frames |
+| Terrain stride | `5` |
+| Water stride | `10` |
+| Water coastal detail | Native resolution (`stride = 0`) within `100 m` offshore and `500 m` inland from the `z = 0` coastline |
+| Landslide stride | Native resolution (`0`) |
+| Projected CRS | `EPSG:32637` (`WGS 84 / UTM zone 37N`) |
+| Browser asset format | Compact v2: static `X / Y / quad topology` templates plus gzip-compressed per-frame arrays |
+| Water dynamic arrays | `z / wave_amplitude / m / h / u / v` as `Float32`; `b = z - h` and speed are derived in the browser |
+| Dynamic array precision | `Float32` |
+| Terrain reuse | Single static `terrain.vtp` reused across frames; DEM is not regenerated or updated online during playback. |
+| Landslide ROI | Global union over all exported frames |
+| Landslide ROI pad | `24` native grid cells |
+| Water threshold | default `m <= 0.3`; `m` is preserved for browser-side thresholding |
+| Landslide threshold | default `m >= 0.0` |
+
+</details>
+
+<details class="manta-foldout">
+<summary>Layer styles</summary>
+
+| Layer | Style |
+|---|---|
+| DEM bathymetry | Sea-split target: `cmocean.deep`; currently kept as a static gray relief surface. |
+| DEM topography | Sea-split target: `cmcrameri.grayC + relief / hillshade`; terrain is exported at higher resolution than water frames. |
+| Map overlay | Optional online basemap texture-mapped onto the exported terrain mesh using `EPSG:32637 -> Web Mercator` coordinates. Sources are limited to Esri Imagery + Labels, OpenStreetMap Topographic (OpenTopoMap), and Esri Streets, in that order. |
+| Water surface | Scalar = `wave_amplitude`; the Layers readout reports the true global ocean-water range (`b = z - h <= 0`) after the active `water m` filter. The color ramp uses a robust symmetric saturation range so wave colors remain readable, while the colorbar header reports the true current-frame ocean-water range. Inland free-surface geometry remains available for inundation detail. Surface opacity = `1.0`. |
+| Inundation overlays | Current-frame and cumulative-maximum inland inundation depth where `b >= 0`, filtered by the active `water m` threshold. |
+| Velocity overlays | Current-frame `turbo` velocity arrows use cell-aware lengths and spatial sampling across the water region. Cumulative-maximum wave velocity uses `cmocean.speed` with a `99.5`th-percentile saturation limit, matching the publication postprocessing style. Both are filtered by the active `water m` threshold. |
+| Landslide | Scalar selector = `hm / m / Δb`; colormap = `magma`; geometry is draped to the DEM and displayed with a `+5 m` visual lift. |
+
+</details>

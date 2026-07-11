@@ -16,7 +16,7 @@ import vtkRenderWindowInteractor from '@kitware/vtk.js/Rendering/Core/RenderWind
 import vtkInteractorStyleTrackballCamera from '@kitware/vtk.js/Interaction/Style/InteractorStyleTrackballCamera';
 
 const DEFAULT_CASE_BASE_URL = new URL(
-  /* @vite-ignore */ '../data/demo/aqaba_case_001/',
+  /* @vite-ignore */ '../data/demo/aqaba_lsa_c10_angm25/',
   import.meta.url
 );
 

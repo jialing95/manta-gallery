@@ -5,17 +5,25 @@ title: "Gallery"
 ## Demo cases
 
 ::: {.case-card}
-### Aqaba LSB C10
+### Aqaba LSA C10 angm25
 
-Interactive 3D view of landslide tsunami (case: LSB C10) in the Gulf of Aqaba.
+Interactive 3D view of landslide tsunami case AQA_017_K1_C10_angm25_mixed in the Gulf of Aqaba.
 
-[Open case](cases/aqaba_case_001.qmd)
+[Open case](cases/aqaba_lsa_c10_angm25.qmd)
 :::
 
 ::: {.case-card}
-### Aqaba LSA C10
+### Aqaba LSB NC10 angm20
 
-Interactive 3D view of landslide tsunami (case: LSA C10) in the Gulf of Aqaba.
+Interactive 3D view of landslide tsunami case AQA_006_K1_NC10_angm20_mixed in the Gulf of Aqaba.
 
-[Open case](cases/aqaba_lsa_c10.qmd)
+[Open case](cases/aqaba_lsb_nc10_angm20.qmd)
+:::
+
+::: {.case-card}
+### Aqaba LSC C10 angm30
+
+Interactive 3D view of landslide tsunami case AQA_018_K1_C10_angm30_mixed in the Gulf of Aqaba.
+
+[Open case](cases/aqaba_lsc_c10_angm30.qmd)
 :::

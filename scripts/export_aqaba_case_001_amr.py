@@ -1,27 +1,29 @@
 #!/usr/bin/env python3
 """
-Export FORT AMR diagnostics for Aqaba LSB C10 as lightweight JSON sidecars.
+Export FORT AMR diagnostics as lightweight JSON sidecars.
 
 This script is intentionally independent from export_aqaba_case_001.py's
 surface pipeline. It reads only FORT headers via dclaw_io.fort_cache and does
 not rewrite terrain or compact water/landslide files.
 
 Preferred one-command build from the repository root:
-    ./scripts/build_site.sh /path/to/dclaw-case
+    ./scripts/build_case.sh <case-id> /path/to/dclaw-case --title "Case title"
 
 Output:
-    data/demo/aqaba_case_001/amr/frame_0000.json ...
-    data/demo/aqaba_case_001/case.json  (updated with layers.amr)
+    data/demo/<case-id>/amr/frame_0000.json ...
+    data/demo/<case-id>/case.json  (updated with layers.amr)
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
+import export_aqaba_case_001 as surface_export
 # Reuse case-specific constants from the main exporter without running it.
 from export_aqaba_case_001 import (  # type: ignore
     REPO_ROOT,
@@ -29,6 +31,7 @@ from export_aqaba_case_001 import (  # type: ignore
     CASE_DIR,
     OUTDIR,
     FRAME_INDEX,
+    EXPORT_FRAME_STEP,
     insert_manta_src,
 )
 
@@ -42,9 +45,10 @@ def configure_runtime(
     manta_src: Optional[Path] = None,
     outdir: Optional[Path] = None,
     frame_index: Optional[int] = None,
+    frame_step: Optional[int] = None,
 ) -> None:
     """Use the same local paths as the compact surface export."""
-    global CASE_DIR, MANTA_SRC, OUTDIR, AMR_OUTDIR, FRAME_INDEX
+    global CASE_DIR, MANTA_SRC, OUTDIR, AMR_OUTDIR, FRAME_INDEX, EXPORT_FRAME_STEP
 
     if case_dir is not None:
         CASE_DIR = Path(case_dir).expanduser().resolve()
@@ -54,7 +58,14 @@ def configure_runtime(
         OUTDIR = Path(outdir).expanduser().resolve()
     if frame_index is not None:
         FRAME_INDEX = int(frame_index)
+    if frame_step is not None:
+        EXPORT_FRAME_STEP = max(1, int(frame_step))
     AMR_OUTDIR = OUTDIR / "amr"
+    surface_export.CASE_DIR = CASE_DIR
+    surface_export.MANTA_SRC = MANTA_SRC
+    surface_export.OUTDIR = OUTDIR
+    surface_export.FRAME_INDEX = FRAME_INDEX
+    surface_export.EXPORT_FRAME_STEP = EXPORT_FRAME_STEP
 
 
 def _as_float(x: Any, default: Optional[float] = None) -> Optional[float]:
@@ -88,14 +99,21 @@ def load_fort_cube():
     keep robust fallbacks for wrapper/private attributes.
     """
     insert_manta_src(MANTA_SRC)
+    cache_root = Path(
+        os.environ.get(
+            "MANTA_FORT_CACHE_DIR",
+            f"/tmp/manta-gallery-fort-cache-{os.getuid()}",
+        )
+    )
+    cache_dir = cache_root / CASE_DIR.name
 
     try:
         from dclaw_io.fort_cache import DClawFortCacheCube  # type: ignore
-        return DClawFortCacheCube(str(CASE_DIR))
+        return DClawFortCacheCube(str(CASE_DIR), cache_dir=cache_dir)
     except Exception as e_cube:
         try:
             from dclaw_io.fort_cache import DClawFortCacheRun  # type: ignore
-            return DClawFortCacheRun(str(CASE_DIR))
+            return DClawFortCacheRun(str(CASE_DIR), cache_dir=cache_dir)
         except Exception as e_run:
             raise RuntimeError(
                 "Could not import/load dclaw_io.fort_cache DClawFortCacheCube "
@@ -209,8 +227,14 @@ def normalize_patch(g: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     }
 
 
-def export_one(cube: Any, browser_index: int, native_index: int, time_value: float) -> Dict[str, Any]:
-    headers = get_amr_headers(cube, browser_index)
+def export_one(
+    cube: Any,
+    browser_index: int,
+    source_index: int,
+    native_index: int,
+    time_value: float,
+) -> Dict[str, Any]:
+    headers = get_amr_headers(cube, source_index)
     patches = []
     for h in headers:
         p = normalize_patch(h)
@@ -220,6 +244,7 @@ def export_one(cube: Any, browser_index: int, native_index: int, time_value: flo
     summary = summarize_headers(patches)
     return {
         "browser_index": int(browser_index),
+        "source_index": int(source_index),
         "native_index": int(native_index),
         "time": float(time_value),
         "ngrids": int(summary["ngrids"]),
@@ -279,6 +304,7 @@ def main() -> None:
     parser.add_argument("--manta-src", type=Path, default=MANTA_SRC)
     parser.add_argument("--outdir", type=Path, default=OUTDIR)
     parser.add_argument("--frame-index", type=int, default=FRAME_INDEX)
+    parser.add_argument("--frame-step", type=int, default=EXPORT_FRAME_STEP)
     args = parser.parse_args()
 
     configure_runtime(
@@ -286,6 +312,7 @@ def main() -> None:
         manta_src=args.manta_src,
         outdir=args.outdir,
         frame_index=args.frame_index,
+        frame_step=args.frame_step,
     )
 
     cube = load_fort_cube()
@@ -295,17 +322,31 @@ def main() -> None:
         raise RuntimeError("No FORT frames found for AMR export")
     if len(times) < nt:
         times = times + [float(i) for i in range(len(times), nt)]
+    frame_indices = surface_export.get_export_frame_indices(cube)
+    selected_times = [
+        float(times[int(k)]) if int(k) < len(times) else float(k)
+        for k in frame_indices
+    ]
 
     AMR_OUTDIR.mkdir(parents=True, exist_ok=True)
 
     global_level_counts: Dict[str, int] = {}
 
     print("[AMR] Exporting FORT header-only AMR diagnostics")
-    print(f"[AMR] frames={nt}, default_index={min(int(FRAME_INDEX), nt - 1)}")
+    print(
+        f"[AMR] frames={len(frame_indices)}, native_total={nt}, "
+        f"frame_step={EXPORT_FRAME_STEP}"
+    )
 
-    for i in range(nt):
-        native = get_native_frame_no(cube, i)
-        payload = export_one(cube, i, native, float(times[i]))
+    for i, source_index in enumerate(frame_indices):
+        native = get_native_frame_no(cube, int(source_index))
+        payload = export_one(
+            cube,
+            browser_index=i,
+            source_index=int(source_index),
+            native_index=native,
+            time_value=float(times[int(source_index)]),
+        )
 
         for lv, n in payload.get("levels", {}).items():
             global_level_counts[str(lv)] = int(global_level_counts.get(str(lv), 0)) + int(n)
@@ -313,10 +354,14 @@ def main() -> None:
         out = AMR_OUTDIR / f"frame_{i:04d}.json"
         out.write_text(json.dumps(payload, separators=(",", ":"), ensure_ascii=False), encoding="utf-8")
 
-        if (i % 10 == 0) or (i == nt - 1):
-            print(f"[AMR] wrote {i + 1:>3}/{nt} frame={i:04d} native={native:04d} grids={payload['ngrids']}")
+        if (i % 10 == 0) or (i == len(frame_indices) - 1):
+            print(
+                f"[AMR] wrote {i + 1:>3}/{len(frame_indices)} "
+                f"frame={i:04d} source={int(source_index):04d} "
+                f"native={native:04d} grids={payload['ngrids']}"
+            )
 
-    update_case_json(nt, times, global_level_counts)
+    update_case_json(len(frame_indices), selected_times, global_level_counts)
     print(f"[OK] AMR JSON written to: {AMR_OUTDIR}")
     print(f"[OK] Updated manifest: {OUTDIR / 'case.json'}")
 

@@ -25,7 +25,8 @@ Options:
                             Default: $MANTA_SRC or ~/Desktop/preprocessor
   --python <executable>     Python environment with numpy, scipy, and pyvista.
                             Default: $MANTA_PYTHON or <manta-src>/.venv/bin/python
-  --frame-index <n>         Default display frame passed to the exporter.
+  --frame-index <n>         Native default frame passed to the exporter.
+  --frame-step <n>          Native frame stride for exported browser frames.
   --push                    Commit this case's canonical assets/pages and push origin/main.
   --commit-message <text>   Commit message used with --push.
   -h, --help                Show this help.
@@ -49,6 +50,7 @@ OVERVIEW=""
 MANTA_SRC="${MANTA_SRC:-$HOME/Desktop/preprocessor}"
 PYTHON_BIN="${MANTA_PYTHON:-}"
 FRAME_INDEX=""
+FRAME_STEP=""
 PUSH=false
 COMMIT_MESSAGE=""
 POSITIONALS=()
@@ -88,6 +90,11 @@ while (($#)); do
     --frame-index)
       (($# >= 2)) || fail "--frame-index requires an integer"
       FRAME_INDEX="$2"
+      shift 2
+      ;;
+    --frame-step)
+      (($# >= 2)) || fail "--frame-step requires an integer"
+      FRAME_STEP="$2"
       shift 2
       ;;
     --push)
@@ -160,6 +167,9 @@ fi
 if [[ -n "$FRAME_INDEX" && ! "$FRAME_INDEX" =~ ^[0-9]+$ ]]; then
   fail "--frame-index must be a non-negative integer"
 fi
+if [[ -n "$FRAME_STEP" && ! "$FRAME_STEP" =~ ^[1-9][0-9]*$ ]]; then
+  fail "--frame-step must be a positive integer"
+fi
 
 if "$PUSH"; then
   [[ "$(git branch --show-current)" == "main" ]] || fail "--push is only supported from the main branch"
@@ -228,9 +238,15 @@ if [[ -n "$FRAME_INDEX" ]]; then
   EXPORT_ARGS+=(--frame-index "$FRAME_INDEX")
   AMR_ARGS+=(--frame-index "$FRAME_INDEX")
 fi
+if [[ -n "$FRAME_STEP" ]]; then
+  EXPORT_ARGS+=(--frame-step "$FRAME_STEP")
+  AMR_ARGS+=(--frame-step "$FRAME_STEP")
+fi
 
 "$PYTHON_BIN" scripts/export_aqaba_case_001.py "${EXPORT_ARGS[@]}"
 "$PYTHON_BIN" scripts/export_aqaba_case_001_amr.py "${AMR_ARGS[@]}"
+
+DEFAULT_FRAME_INDEX="$("$PYTHON_BIN" -c 'import json, sys; print(int(json.load(open(sys.argv[1], encoding="utf-8"))["time"]["default_index"]))' "$OUTDIR/case.json")"
 
 "$PYTHON_BIN" scripts/update_case_pages.py \
   --case-id "$CASE_ID" \
@@ -238,7 +254,7 @@ fi
   --label "$LABEL" \
   --card-description "$CARD_DESCRIPTION" \
   --overview "$OVERVIEW" \
-  --default-frame-index "${FRAME_INDEX:-20}"
+  --default-frame-index "$DEFAULT_FRAME_INDEX"
 
 npm ci
 npm run build:viewer

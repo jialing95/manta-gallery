@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-Export Aqaba Case 001 for MANTA Gallery.
+Export an Aqaba D-Claw case for MANTA Gallery.
 
 Place this file at:
     ~/Desktop/manta-gallery/scripts/export_aqaba_case_001.py
 
 Preferred one-command build from the repository root:
-    ./scripts/build_site.sh /path/to/dclaw-case
+    ./scripts/build_case.sh <case-id> /path/to/dclaw-case --title "Case title"
 
 Output:
-    data/demo/aqaba_case_001/
+    data/demo/<case-id>/
     ├── case.json
     ├── terrain.vtp
     ├── water/template.bin.gz
@@ -32,6 +32,7 @@ from __future__ import annotations
 import argparse
 import gzip
 import json
+import os
 import struct
 import sys
 from pathlib import Path
@@ -47,9 +48,9 @@ import numpy as np
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 MANTA_SRC = Path("/home/daij/Desktop/preprocessor")
-CASE_DIR = Path("/home/daij/Desktop/compile_all/AQA_016_K1_C10_angm35_mixed")
+CASE_DIR = Path("/home/daij/Desktop/compile_all/aqaba_scenarios_lsa/results/AQA_017_K1_C10_angm25_mixed")
 
-OUTDIR = REPO_ROOT / "data" / "demo" / "aqaba_case_001"
+OUTDIR = REPO_ROOT / "data" / "demo" / "aqaba_lsa_c10_angm25"
 
 SOURCE = "fort"
 FRAME_INDEX = 20
@@ -114,8 +115,8 @@ LANDSLIDE_ROI_PAD = 24
 # Detect landslide ROI by hm. Keep this very small to include weak/edge material.
 LANDSLIDE_ROI_HM_EPS = 1.0e-6
 
-TITLE = "Aqaba LSB C10"
-DESCRIPTION = "Aqaba LSB C10 time-series D-Claw export with water height and landslide material fields."
+TITLE = "Aqaba LSA C10 angm25"
+DESCRIPTION = "Aqaba LSA C10 angm25 time-series D-Claw export with water height and landslide material fields."
 
 
 # =============================================================================
@@ -128,11 +129,12 @@ def configure_runtime(
     manta_src: Optional[Path] = None,
     outdir: Optional[Path] = None,
     frame_index: Optional[int] = None,
+    frame_step: Optional[int] = None,
     title: Optional[str] = None,
     description: Optional[str] = None,
 ) -> None:
     """Override case paths without editing this file for each local export."""
-    global CASE_DIR, MANTA_SRC, OUTDIR, FRAME_INDEX, TITLE, DESCRIPTION
+    global CASE_DIR, MANTA_SRC, OUTDIR, FRAME_INDEX, EXPORT_FRAME_STEP, TITLE, DESCRIPTION
 
     if case_dir is not None:
         CASE_DIR = Path(case_dir).expanduser().resolve()
@@ -142,6 +144,8 @@ def configure_runtime(
         OUTDIR = Path(outdir).expanduser().resolve()
     if frame_index is not None:
         FRAME_INDEX = int(frame_index)
+    if frame_step is not None:
+        EXPORT_FRAME_STEP = max(1, int(frame_step))
     if title is not None:
         TITLE = str(title)
     if description is not None:
@@ -1001,7 +1005,13 @@ def load_cube():
     if SOURCE == "fort":
         from visualization.dclaw_layers import DClawFortCacheCube
 
-        cube = DClawFortCacheCube(str(CASE_DIR))
+        cache_root = Path(
+            os.environ.get(
+                "MANTA_FORT_CACHE_DIR",
+                f"/tmp/manta-gallery-fort-cache-{os.getuid()}",
+            )
+        )
+        cube = DClawFortCacheCube(str(CASE_DIR), cache_dir=cache_root / CASE_DIR.name)
         try:
             cube.set_mode("mixed")
         except Exception:
@@ -1357,7 +1367,7 @@ def export_case() -> None:
         "description": DESCRIPTION,
         "source": {
             "kind": SOURCE,
-            "case_dir": str(CASE_DIR),
+            "case_dir": CASE_DIR.name,
             "raw_output": "not included",
         },
         "time": {
@@ -1630,12 +1640,13 @@ def print_export_summary(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Export the Aqaba LSB C10 compact gallery assets from D-Claw FORT output."
+        description="Export compact MANTA Gallery assets from D-Claw FORT output."
     )
     parser.add_argument("--case-dir", type=Path, default=CASE_DIR)
     parser.add_argument("--manta-src", type=Path, default=MANTA_SRC)
     parser.add_argument("--outdir", type=Path, default=OUTDIR)
     parser.add_argument("--frame-index", type=int, default=FRAME_INDEX)
+    parser.add_argument("--frame-step", type=int, default=EXPORT_FRAME_STEP)
     parser.add_argument("--title", default=TITLE)
     parser.add_argument("--description", default=DESCRIPTION)
     args = parser.parse_args()
@@ -1645,6 +1656,7 @@ def main() -> None:
         manta_src=args.manta_src,
         outdir=args.outdir,
         frame_index=args.frame_index,
+        frame_step=args.frame_step,
         title=args.title,
         description=args.description,
     )
