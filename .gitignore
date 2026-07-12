@@ -9,6 +9,7 @@ node_modules/
 viewer/dist/
 docs/assets/js/*viewer.bundle.js
 docs/assets/js/*viewer.*.js
+!docs/assets/js/manta_case_viewer.bundle.js
 
 # Quarto
 .quarto/
@@ -43,8 +44,12 @@ fgmax/
 !data/demo/**/*.geojson
 !data/demo/**/*.bin.gz
 
-# Generated publish assets: CI syncs the canonical data tree before render.
+# Generated publish assets: keep the small fixed place layers tracked for pages.
 docs/assets/data/
+!docs/assets/data/
+docs/assets/data/*
+!docs/assets/data/places/
+!docs/assets/data/places/*.geojson
 
 /.quarto/
 **/*.quarto_ipynb
