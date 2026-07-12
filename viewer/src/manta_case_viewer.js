@@ -20,6 +20,13 @@ const DEFAULT_CASE_BASE_URL = new URL(
   import.meta.url
 );
 
+const PLACE_DATASETS = [
+  { file: 'Egyptian_cities_manta.geojson', group: 'city' },
+  { file: 'NEOM_sites_manta.geojson', group: 'neom' },
+];
+
+const PLACE_RENDER_LIFT = 95.0;
+
 const state = {
   caseInfo: null,
   renderer: null,
@@ -105,6 +112,13 @@ const state = {
     historyThreshold: null,
     historyThrough: -1,
     historyLoadToken: 0,
+  },
+  places: {
+    overlay: null,
+    points: [],
+    raf: null,
+    loaded: false,
+    visible: true,
   },
 };
 
@@ -243,6 +257,12 @@ function injectCss() {
       border-radius: 5px;
       background: #ffffff;
       color: #24292f;
+    }
+
+    .manta-viewer-controls button[aria-pressed="true"] {
+      color: #ffffff;
+      background: #0969da;
+      border-color: #0969da;
     }
 
 
@@ -466,6 +486,72 @@ function injectCss() {
       opacity: 0.92;
       margin-left: 2px;
     }
+
+    .manta-place-overlay {
+      position: absolute;
+      inset: 0;
+      z-index: 25;
+      overflow: hidden;
+      pointer-events: none;
+      contain: layout style;
+    }
+
+    .manta-place-billboard {
+      position: absolute;
+      left: 0;
+      top: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1px;
+      transform: translate(-50%, -100%);
+      transform-origin: 50% 100%;
+      user-select: none;
+      will-change: transform;
+    }
+
+    .manta-place-label {
+      max-width: 154px;
+      padding: 4px 8px;
+      border: 1px solid rgba(15, 23, 42, 0.18);
+      border-radius: 6px;
+      color: #0f172a;
+      background: rgba(255, 255, 255, 0.92);
+      box-shadow: 0 5px 18px rgba(15, 23, 42, 0.25);
+      font-size: 14px;
+      font-weight: 800;
+      line-height: 1.1;
+      letter-spacing: 0;
+      text-align: center;
+      white-space: normal;
+      overflow-wrap: anywhere;
+      backdrop-filter: blur(8px);
+    }
+
+    .manta-place-billboard[data-place-group="neom"] .manta-place-label {
+      border-color: rgba(0, 112, 243, 0.34);
+      box-shadow: 0 5px 18px rgba(0, 112, 243, 0.25);
+    }
+
+    .manta-place-pin {
+      font-size: 34px;
+      line-height: 1;
+      filter:
+        drop-shadow(0 2px 0 rgba(255, 255, 255, 0.95))
+        drop-shadow(0 6px 10px rgba(0, 0, 0, 0.45));
+    }
+
+    @media (max-width: 720px) {
+      .manta-place-label {
+        max-width: 126px;
+        padding: 3px 6px;
+        font-size: 12px;
+      }
+
+      .manta-place-pin {
+        font-size: 30px;
+      }
+    }
 `;
   document.head.appendChild(style);
 }
@@ -482,6 +568,8 @@ function setupDom(container) {
 
   container.innerHTML = `
     <div class="manta-vtk-host"></div>
+
+    <div class="manta-place-overlay" aria-label="Place locations"></div>
 
     <div class="manta-viewer-status">
       Loading MANTA Gallery viewer...
@@ -542,6 +630,7 @@ function setupDom(container) {
       <div class="manta-viewer-controls-row">
       <label><input type="checkbox" id="toggle-terrain" checked> Terrain</label>
       <button id="toggle-map" type="button" aria-pressed="false" title="Fetch an online topographic basemap and drape it on the terrain mesh.">Map</button>
+      <button id="toggle-places" type="button" aria-pressed="true" title="Show fixed city and NEOM site location billboards.">Places on</button>
       <label title="Choose the online basemap provider used by the Map button.">
         Map source:
         <select id="map-provider">
@@ -1375,6 +1464,180 @@ function getTerrainDrapeSampler() {
   state.terrainDrape.source = terrain;
   state.terrainDrape.sampler = sampler;
   return sampler;
+}
+
+function getPlaceTerrainZ(x, y) {
+  const sampler = getTerrainDrapeSampler();
+  if (!sampler) return Number.NaN;
+  return interpolateTerrainGrid(sampler, x, y);
+}
+
+function getPlacesBaseUrl() {
+  return new URL('../../places/', state.caseBaseUrl);
+}
+
+function createPlaceUrl(fileName) {
+  return new URL(fileName, getPlacesBaseUrl());
+}
+
+function normalizePlaceFeature(feature, group) {
+  const coordinates = feature?.geometry?.coordinates;
+  if (feature?.geometry?.type !== 'Point' || !Array.isArray(coordinates)) return null;
+
+  const lon = Number(coordinates[0]);
+  const lat = Number(coordinates[1]);
+  if (!Number.isFinite(lon) || !Number.isFinite(lat)) return null;
+
+  const name = String(feature?.properties?.name ?? '').trim();
+  if (!name) return null;
+
+  const projected = lonLatToUtm(lon, lat);
+  const terrainZ = getPlaceTerrainZ(projected.x, projected.y);
+  const z = (Number.isFinite(terrainZ) ? terrainZ : 0.0) + PLACE_RENDER_LIFT;
+
+  return {
+    name,
+    group,
+    lon,
+    lat,
+    x: projected.x,
+    y: projected.y,
+    z,
+    el: null,
+  };
+}
+
+async function loadPlaceBillboardData() {
+  const collections = await Promise.all(
+    PLACE_DATASETS.map(async (dataset) => ({
+      dataset,
+      geojson: await fetchJson(createPlaceUrl(dataset.file)),
+    }))
+  );
+
+  return collections.flatMap(({ dataset, geojson }) => (
+    Array.isArray(geojson?.features)
+      ? geojson.features
+        .map((feature) => normalizePlaceFeature(feature, dataset.group))
+        .filter(Boolean)
+      : []
+  ));
+}
+
+function createPlaceBillboardElement(place) {
+  const el = document.createElement('div');
+  el.className = 'manta-place-billboard';
+  el.dataset.placeGroup = place.group;
+
+  const label = document.createElement('div');
+  label.className = 'manta-place-label';
+  label.textContent = place.name;
+
+  const pin = document.createElement('div');
+  pin.className = 'manta-place-pin';
+  pin.textContent = '📍';
+
+  el.append(label, pin);
+  return el;
+}
+
+function renderPlaceBillboards(container) {
+  const overlay = state.places.overlay ?? container.querySelector('.manta-place-overlay');
+  const renderer = state.renderer;
+  const view = state.openGLRenderWindow;
+  if (!overlay || !renderer || !view) return;
+
+  overlay.hidden = !state.places.visible;
+  if (!state.places.visible) return;
+
+  const host = container.querySelector('.manta-vtk-host') ?? container;
+  const rect = host.getBoundingClientRect();
+  const framebufferSize = view.getFramebufferSize?.() ?? view.getSize?.() ?? [rect.width, rect.height];
+  const framebufferWidth = Number(framebufferSize[0]);
+  const framebufferHeight = Number(framebufferSize[1]);
+  if (
+    rect.width <= 0
+    || rect.height <= 0
+    || !Number.isFinite(framebufferWidth)
+    || !Number.isFinite(framebufferHeight)
+    || framebufferWidth <= 0
+    || framebufferHeight <= 0
+  ) {
+    return;
+  }
+
+  const scaleX = rect.width / framebufferWidth;
+  const scaleY = rect.height / framebufferHeight;
+  for (const place of state.places.points) {
+    if (!place.el) continue;
+    const display = view.worldToDisplay?.(place.x, place.y, place.z, renderer);
+    const displayX = Number(display?.[0]);
+    const displayY = Number(display?.[1]);
+    const displayZ = Number(display?.[2]);
+    if (
+      !Number.isFinite(displayX)
+      || !Number.isFinite(displayY)
+      || !Number.isFinite(displayZ)
+      || displayZ < -0.05
+      || displayZ > 1.05
+    ) {
+      place.el.style.display = 'none';
+      continue;
+    }
+
+    const x = displayX * scaleX;
+    const y = rect.height - displayY * scaleY;
+    const margin = 180;
+    if (x < -margin || x > rect.width + margin || y < -margin || y > rect.height + margin) {
+      place.el.style.display = 'none';
+      continue;
+    }
+
+    place.el.style.display = '';
+    place.el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -100%)`;
+  }
+}
+
+function syncPlaceBillboardButton(container) {
+  const button = container?.querySelector?.('#toggle-places');
+  if (!button) return;
+  button.setAttribute('aria-pressed', String(state.places.visible));
+  button.textContent = state.places.visible ? 'Places on' : 'Places';
+}
+
+function startPlaceBillboardLoop(container) {
+  if (state.places.raf !== null) {
+    window.cancelAnimationFrame(state.places.raf);
+    state.places.raf = null;
+  }
+
+  const tick = () => {
+    renderPlaceBillboards(container);
+    state.places.raf = window.requestAnimationFrame(tick);
+  };
+  tick();
+}
+
+async function setupPlaceBillboards(container) {
+  const overlay = container.querySelector('.manta-place-overlay');
+  if (!overlay || state.places.loaded) return;
+  state.places.overlay = overlay;
+  syncPlaceBillboardButton(container);
+
+  try {
+    const places = await loadPlaceBillboardData();
+    overlay.replaceChildren();
+    for (const place of places) {
+      place.el = createPlaceBillboardElement(place);
+      overlay.appendChild(place.el);
+    }
+    state.places.points = places;
+    state.places.loaded = true;
+    syncPlaceBillboardButton(container);
+    startPlaceBillboardLoop(container);
+  } catch (error) {
+    console.warn('[MANTA Gallery] Failed to load place billboards:', error);
+  }
 }
 
 function compactPointHasFiniteZ(template, pointId) {
@@ -2933,6 +3196,52 @@ function utmToLonLat(easting, northing, crsConfig = getMapCrsConfig()) {
   };
 }
 
+function lonLatToUtm(lon, lat, crsConfig = getMapCrsConfig()) {
+  const a = 6378137.0;
+  const eccSquared = 0.0066943799901413165;
+  const k0 = 0.9996;
+  const eccPrimeSquared = eccSquared / (1.0 - eccSquared);
+
+  const lonNumber = Number(lon);
+  const latNumber = Number(lat);
+  const latRad = latNumber * Math.PI / 180.0;
+  const lonRad = lonNumber * Math.PI / 180.0;
+  const longOrigin = (crsConfig.zone - 1.0) * 6.0 - 180.0 + 3.0;
+  const longOriginRad = longOrigin * Math.PI / 180.0;
+
+  const sinLat = Math.sin(latRad);
+  const cosLat = Math.cos(latRad);
+  const tanLat = Math.tan(latRad);
+  const n = a / Math.sqrt(1.0 - eccSquared * sinLat ** 2);
+  const t = tanLat ** 2;
+  const c = eccPrimeSquared * cosLat ** 2;
+  const aa = cosLat * (lonRad - longOriginRad);
+  const m = a * (
+    (1.0 - eccSquared / 4.0 - 3.0 * eccSquared ** 2 / 64.0 - 5.0 * eccSquared ** 3 / 256.0) * latRad
+    - (3.0 * eccSquared / 8.0 + 3.0 * eccSquared ** 2 / 32.0 + 45.0 * eccSquared ** 3 / 1024.0) * Math.sin(2.0 * latRad)
+    + (15.0 * eccSquared ** 2 / 256.0 + 45.0 * eccSquared ** 3 / 1024.0) * Math.sin(4.0 * latRad)
+    - (35.0 * eccSquared ** 3 / 3072.0) * Math.sin(6.0 * latRad)
+  );
+
+  const x = k0 * n * (
+    aa
+    + (1.0 - t + c) * aa ** 3 / 6.0
+    + (5.0 - 18.0 * t + t ** 2 + 72.0 * c - 58.0 * eccPrimeSquared) * aa ** 5 / 120.0
+  ) + 500000.0;
+
+  let y = k0 * (
+    m
+    + n * tanLat * (
+      aa ** 2 / 2.0
+      + (5.0 - t + 9.0 * c + 4.0 * c ** 2) * aa ** 4 / 24.0
+      + (61.0 - 58.0 * t + t ** 2 + 600.0 * c - 330.0 * eccPrimeSquared) * aa ** 6 / 720.0
+    )
+  );
+  if (!crsConfig.northern) y += 10000000.0;
+
+  return { x, y };
+}
+
 function lonLatToTilePixel(lon, lat, zoom) {
   const clampedLat = Math.min(85.05112878, Math.max(-85.05112878, Number(lat)));
   const scale = MAP_TILE_SIZE * 2 ** zoom;
@@ -3823,6 +4132,16 @@ function setupControls(container) {
       toggleMapOverlay(container).catch(console.error);
     });
   }
+  const placesButton = container.querySelector('#toggle-places');
+  if (placesButton) {
+    syncPlaceBillboardButton(container);
+    placesButton.addEventListener('click', (event) => {
+      event.stopPropagation();
+      state.places.visible = !state.places.visible;
+      syncPlaceBillboardButton(container);
+      renderPlaceBillboards(container);
+    });
+  }
   const mapProviderSelect = container.querySelector('#map-provider');
   if (mapProviderSelect) {
     mapProviderSelect.value = state.mapOverlay.providerId;
@@ -4372,9 +4691,10 @@ async function main() {
     const { caseInfo, terrain, water, landslide, frameIndex } = await loadCaseAndData(container);
     addActors(terrain, water, landslide);
     setupControls(container);
-    
+    await setupPlaceBillboards(container);
+
     startMapOverlays(container);
-await updateAmrForCurrentFrame(container);
+    await updateAmrForCurrentFrame(container);
 
     setStatus(
       container,

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-mkdir -p docs/assets/data/demo
+mkdir -p docs/assets/data
 
 rsync -a --delete \
-  data/demo/ \
-  docs/assets/data/demo/
+  data/ \
+  docs/assets/data/
 
-printf '[SYNC] Canonical gallery assets copied to docs/assets/data/demo\n'
+printf '[SYNC] Canonical gallery assets copied to docs/assets/data\n'

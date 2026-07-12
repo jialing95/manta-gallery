@@ -1,0 +1,156 @@
+{
+  "type": "FeatureCollection",
+  "name": "Egyptian cities",
+  "crs": {
+    "type": "name",
+    "properties": {
+      "name": "EPSG:4326"
+    }
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          34.36380214194462,
+          27.96969870315611
+        ]
+      },
+      "properties": {
+        "id": 1,
+        "name": "Sharm El Sheikh",
+        "source_format": "KML",
+        "styleUrl": "#__managed_style_0A237B940E3EC78CA0C4",
+        "altitude": 51.66827758400115,
+        "lookat_longitude": 33.63412167445124,
+        "lookat_latitude": 27.9317440392604,
+        "lookat_altitude": 9.574319246902386,
+        "lookat_heading": 9.667435438271513,
+        "lookat_tilt": 0.0,
+        "lookat_range": 279254.1125179455,
+        "lookat_altitudeMode": "absolute"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          34.50911741577929,
+          28.50079594950328
+        ]
+      },
+      "properties": {
+        "id": 2,
+        "name": "Dahab",
+        "source_format": "KML",
+        "styleUrl": "#__managed_style_0A237B940E3EC78CA0C4",
+        "altitude": 13.68438548036511,
+        "lookat_longitude": 33.84498737377394,
+        "lookat_latitude": 28.32934235780527,
+        "lookat_altitude": 945.664077763882,
+        "lookat_heading": 9.797212357269544,
+        "lookat_tilt": 0.0,
+        "lookat_range": 378393.9893697202,
+        "lookat_altitudeMode": "absolute"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          34.66729206239089,
+          29.00732650707623
+        ]
+      },
+      "properties": {
+        "id": 3,
+        "name": "Nuweiba",
+        "source_format": "KML",
+        "styleUrl": "#__managed_style_0A237B940E3EC78CA0C4",
+        "altitude": 25.6996205746308,
+        "lookat_longitude": 34.55966511673555,
+        "lookat_latitude": 28.93993146605333,
+        "lookat_altitude": 527.9139624997057,
+        "lookat_heading": 9.868393702522694,
+        "lookat_tilt": 0.0,
+        "lookat_range": 51456.05061831884,
+        "lookat_altitudeMode": "absolute"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          34.950974406555225,
+          29.282910477039582
+        ]
+      },
+      "properties": {
+        "id": 4,
+        "name": "Haql",
+        "altitude": 0.0,
+        "styleUrl": "#__managed_style_0A237B940E3EC78CA0C4",
+        "lookat_latitude": 29.282910477039582,
+        "lookat_longitude": 34.950974406555225,
+        "lookat_altitude": 0.0,
+        "lookat_heading": 0.0,
+        "lookat_tilt": 0.0,
+        "lookat_range": 0.0,
+        "lookat_altitudeMode": "absolute",
+        "source_format": "Shapefile"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          35.01034084375631,
+          29.542515386663954
+        ]
+      },
+      "properties": {
+        "id": 5,
+        "name": "Aqaba",
+        "altitude": 0.0,
+        "styleUrl": "#__managed_style_0A237B940E3EC78CA0C4",
+        "lookat_latitude": 29.542515386663954,
+        "lookat_longitude": 35.01034084375631,
+        "lookat_altitude": 0.0,
+        "lookat_heading": 0.0,
+        "lookat_tilt": 0.0,
+        "lookat_range": 0.0,
+        "lookat_altitudeMode": "absolute",
+        "source_format": "Shapefile"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          34.95572603805234,
+          29.567814061603986
+        ]
+      },
+      "properties": {
+        "id": 6,
+        "name": "Eilat",
+        "altitude": 0.0,
+        "styleUrl": "#__managed_style_0A237B940E3EC78CA0C4",
+        "lookat_latitude": 29.567814061603986,
+        "lookat_longitude": 34.95572603805234,
+        "lookat_altitude": 0.0,
+        "lookat_heading": 0.0,
+        "lookat_tilt": 0.0,
+        "lookat_range": 0.0,
+        "lookat_altitudeMode": "absolute",
+        "source_format": "Shapefile"
+      }
+    }
+  ]
+}

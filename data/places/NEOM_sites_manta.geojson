@@ -1,0 +1,324 @@
+{
+  "type": "FeatureCollection",
+  "name": "NEOM sites",
+  "crs": {
+    "type": "name",
+    "properties": {
+      "name": "EPSG:4326"
+    }
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          34.8347866794843,
+          28.81098900502528
+        ]
+      },
+      "properties": {
+        "id": 1,
+        "name": "M2",
+        "source_format": "KML",
+        "styleUrl": "#__managed_style_01D8A607233DE27079F1",
+        "altitude": 8.408615695485802,
+        "lookat_longitude": 34.83472089945919,
+        "lookat_latitude": 28.81097619664961,
+        "lookat_altitude": 7.899430698895458,
+        "lookat_heading": 0.0,
+        "lookat_tilt": 0.0,
+        "lookat_range": 730.0148806669313,
+        "lookat_altitudeMode": "absolute"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          34.8310943,
+          28.8051848
+        ]
+      },
+      "properties": {
+        "id": 2,
+        "name": "M3",
+        "source_format": "KML",
+        "styleUrl": "#__managed_style_01B47D062A3DE270D8BC",
+        "altitude": 0.0,
+        "lookat_longitude": 34.8310943,
+        "lookat_latitude": 28.8051848,
+        "lookat_altitude": 0.0,
+        "lookat_heading": 0.0,
+        "lookat_tilt": 0.0,
+        "lookat_range": 912.0755952364375,
+        "lookat_altitudeMode": "relativeToGround"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          34.645494,
+          28.1551586
+        ]
+      },
+      "properties": {
+        "id": 3,
+        "name": "The Line",
+        "source_format": "KML",
+        "styleUrl": "#__managed_style_01579BC89C3DE271C0E3",
+        "altitude": 0.0,
+        "lookat_longitude": 34.645494,
+        "lookat_latitude": 28.1551586,
+        "lookat_altitude": 0.0,
+        "lookat_heading": 0.0,
+        "lookat_tilt": 0.0,
+        "lookat_range": 918.3107802286781,
+        "lookat_altitudeMode": "relativeToGround"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          34.8407522,
+          28.8476788
+        ]
+      },
+      "properties": {
+        "id": 4,
+        "name": "M1",
+        "source_format": "KML",
+        "styleUrl": "#__managed_style_01D8A607233DE27079F1",
+        "altitude": 0.0,
+        "lookat_longitude": 34.8407522,
+        "lookat_latitude": 28.8476788,
+        "lookat_altitude": 0.0,
+        "lookat_heading": 0.0,
+        "lookat_tilt": 0.0,
+        "lookat_range": 911.6637098827769,
+        "lookat_altitudeMode": "relativeToGround"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          34.8233884,
+          28.8829607
+        ]
+      },
+      "properties": {
+        "id": 5,
+        "name": "M0",
+        "source_format": "KML",
+        "styleUrl": "#__managed_style_01B47D062A3DE270D8BC",
+        "altitude": 0.0,
+        "lookat_longitude": 34.82338839999999,
+        "lookat_latitude": 28.8829607,
+        "lookat_altitude": 0.0,
+        "lookat_heading": 0.0,
+        "lookat_tilt": 0.0,
+        "lookat_range": 911.3213328782232,
+        "lookat_altitudeMode": "relativeToGround"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          34.8018581,
+          28.5599017
+        ]
+      },
+      "properties": {
+        "id": 6,
+        "name": "M5",
+        "source_format": "KML",
+        "styleUrl": "#__managed_style_01B47D062A3DE270D8BC",
+        "altitude": 0.0,
+        "lookat_longitude": 34.8018581,
+        "lookat_latitude": 28.5599017,
+        "lookat_altitude": 0.0,
+        "lookat_heading": 0.0,
+        "lookat_tilt": 0.0,
+        "lookat_range": 914.4428423303369,
+        "lookat_altitudeMode": "relativeToGround"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          34.6724928,
+          28.2458619
+        ]
+      },
+      "properties": {
+        "id": 7,
+        "name": "M11",
+        "source_format": "KML",
+        "styleUrl": "#__managed_style_01B47D062A3DE270D8BC",
+        "altitude": 0.0,
+        "lookat_longitude": 34.6724928,
+        "lookat_latitude": 28.2458619,
+        "lookat_altitude": 0.0,
+        "lookat_heading": 0.0,
+        "lookat_tilt": 0.0,
+        "lookat_range": 917.4481274949943,
+        "lookat_altitudeMode": "relativeToGround"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          34.82020915431722,
+          28.76926953023156
+        ]
+      },
+      "properties": {
+        "id": 8,
+        "name": "M4",
+        "source_format": "KML",
+        "styleUrl": "#__managed_style_01B47D062A3DE270D8BC",
+        "altitude": 56.51139293379623,
+        "lookat_longitude": 34.86288580456207,
+        "lookat_latitude": 28.7303273336912,
+        "lookat_altitude": 1394.425259142404,
+        "lookat_heading": 105.0062960740142,
+        "lookat_tilt": 32.94234332582934,
+        "lookat_range": 37540.06865934469,
+        "lookat_altitudeMode": "absolute"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          34.76964198879497,
+          28.46290107924345
+        ]
+      },
+      "properties": {
+        "id": 9,
+        "name": "M6",
+        "source_format": "KML",
+        "styleUrl": "#__managed_style_01B47D062A3DE270D8BC",
+        "altitude": 22.70164943220571,
+        "lookat_longitude": 34.80985418052214,
+        "lookat_latitude": 28.49943001057626,
+        "lookat_altitude": 83.70025045035241,
+        "lookat_heading": 97.21091607079867,
+        "lookat_tilt": 15.71202986040045,
+        "lookat_range": 47279.8165719118,
+        "lookat_altitudeMode": "absolute"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          34.7588360707543,
+          28.43663955844305
+        ]
+      },
+      "properties": {
+        "id": 10,
+        "name": "M7",
+        "source_format": "KML",
+        "styleUrl": "#__managed_style_01B47D062A3DE270D8BC",
+        "altitude": 16.24536440746779,
+        "lookat_longitude": 34.80985418052214,
+        "lookat_latitude": 28.49943001057626,
+        "lookat_altitude": 83.70025045035241,
+        "lookat_heading": 97.21091607079867,
+        "lookat_tilt": 15.71202986040045,
+        "lookat_range": 47279.8165719118,
+        "lookat_altitudeMode": "absolute"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          34.74720862544591,
+          28.41463652691116
+        ]
+      },
+      "properties": {
+        "id": 11,
+        "name": "M8",
+        "source_format": "KML",
+        "styleUrl": "#__managed_style_01B47D062A3DE270D8BC",
+        "altitude": 14.94246361008141,
+        "lookat_longitude": 34.80985418052214,
+        "lookat_latitude": 28.49943001057626,
+        "lookat_altitude": 83.70025045035241,
+        "lookat_heading": 97.21091607079863,
+        "lookat_tilt": 15.71202986040038,
+        "lookat_range": 47279.8165719118,
+        "lookat_altitudeMode": "absolute"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          34.73731369471122,
+          28.38600107870246
+        ]
+      },
+      "properties": {
+        "id": 12,
+        "name": "M9",
+        "source_format": "KML",
+        "styleUrl": "#__managed_style_01B47D062A3DE270D8BC",
+        "altitude": 44.39052842871747,
+        "lookat_longitude": 34.80985418052214,
+        "lookat_latitude": 28.49943001057626,
+        "lookat_altitude": 83.70025045035241,
+        "lookat_heading": 97.21091607079863,
+        "lookat_tilt": 15.71202986040038,
+        "lookat_range": 47279.8165719118,
+        "lookat_altitudeMode": "absolute"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          34.70310668885212,
+          28.30755957027334
+        ]
+      },
+      "properties": {
+        "id": 13,
+        "name": "M10",
+        "source_format": "KML",
+        "styleUrl": "#__managed_style_01B47D062A3DE270D8BC",
+        "altitude": 17.72913369655241,
+        "lookat_longitude": 34.80985418052214,
+        "lookat_latitude": 28.49943001057626,
+        "lookat_altitude": 83.70025045035241,
+        "lookat_heading": 97.21091607079863,
+        "lookat_tilt": 15.71202986040038,
+        "lookat_range": 47279.8165719118,
+        "lookat_altitudeMode": "absolute"
+      }
+    }
+  ]
+}

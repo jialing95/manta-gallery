@@ -43,8 +43,8 @@ fgmax/
 !data/demo/**/*.geojson
 !data/demo/**/*.bin.gz
 
-# Generated publish assets: CI syncs the canonical data/demo tree before render.
-docs/assets/data/demo/
+# Generated publish assets: CI syncs the canonical data tree before render.
+docs/assets/data/
 
 /.quarto/
 **/*.quarto_ipynb
