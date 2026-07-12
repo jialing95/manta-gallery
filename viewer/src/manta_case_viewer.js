@@ -196,6 +196,40 @@ function injectCss() {
       display: none;
     }
 
+    .manta-places-toggle {
+      position: absolute;
+      left: 24px;
+      top: 178px;
+      z-index: 36;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 15px;
+      border: 1px solid rgba(255, 255, 255, 0.44);
+      border-radius: 999px;
+      color: #ffffff;
+      background: linear-gradient(135deg, #0969da, #0a8f7a);
+      box-shadow: 0 10px 26px rgba(15, 23, 42, 0.34);
+      font-size: 16px;
+      font-weight: 850;
+      line-height: 1.1;
+      letter-spacing: 0;
+      cursor: pointer;
+      pointer-events: auto;
+    }
+
+    .manta-places-toggle[aria-pressed="false"] {
+      color: #24292f;
+      background: rgba(255, 255, 255, 0.94);
+      border-color: rgba(31, 35, 40, 0.18);
+      box-shadow: 0 7px 20px rgba(15, 23, 42, 0.22);
+    }
+
+    .manta-places-toggle:focus-visible {
+      outline: 3px solid rgba(9, 105, 218, 0.34);
+      outline-offset: 3px;
+    }
+
     .manta-viewer-controls {
       position: absolute;
       left: 12px;
@@ -571,6 +605,8 @@ function setupDom(container) {
 
     <div class="manta-place-overlay" aria-label="Place locations"></div>
 
+    <button id="toggle-places" class="manta-places-toggle" type="button" aria-pressed="true" title="Show fixed city and NEOM site location billboards.">📍 Places on</button>
+
     <div class="manta-viewer-status">
       Loading MANTA Gallery viewer...
     </div>
@@ -630,7 +666,6 @@ function setupDom(container) {
       <div class="manta-viewer-controls-row">
       <label><input type="checkbox" id="toggle-terrain" checked> Terrain</label>
       <button id="toggle-map" type="button" aria-pressed="false" title="Fetch an online topographic basemap and drape it on the terrain mesh.">Map</button>
-      <button id="toggle-places" type="button" aria-pressed="true" title="Show fixed city and NEOM site location billboards.">Places on</button>
       <label title="Choose the online basemap provider used by the Map button.">
         Map source:
         <select id="map-provider">
@@ -1602,7 +1637,7 @@ function syncPlaceBillboardButton(container) {
   const button = container?.querySelector?.('#toggle-places');
   if (!button) return;
   button.setAttribute('aria-pressed', String(state.places.visible));
-  button.textContent = state.places.visible ? 'Places on' : 'Places';
+  button.textContent = state.places.visible ? '📍 Places on' : '📍 Places';
 }
 
 function startPlaceBillboardLoop(container) {
