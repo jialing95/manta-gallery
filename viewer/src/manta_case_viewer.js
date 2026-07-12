@@ -27,7 +27,7 @@ const PLACE_DATASETS = [
 
 const PLACE_RENDER_LIFT = 95.0;
 const GAUGE_RENDER_LIFT = 130.0;
-const GAUGE_EMOJI = '📈';
+const GAUGE_EMOJI = '⏱️';
 const GAUGE_PANEL_ID = 'manta-gauge-panel';
 
 const state = {
@@ -131,6 +131,7 @@ const state = {
     loadedCaseId: null,
     modal: null,
     charts: new Set(),
+    visible: true,
   },
 };
 
@@ -285,21 +286,21 @@ function injectCss() {
       white-space: nowrap;
     }
 
-    .manta-viewer-controls .manta-places-toggle {
-      min-width: 112px;
+    .manta-viewer-controls .manta-toolbar-toggle {
+      min-width: 104px;
       flex: 0 0 auto;
       border-color: #0969da;
       font-weight: 800;
       box-shadow: 0 0 0 1px rgba(9, 105, 218, 0.08);
     }
 
-    .manta-viewer-controls .manta-places-toggle[aria-pressed="true"] {
+    .manta-viewer-controls .manta-toolbar-toggle[aria-pressed="true"] {
       color: #ffffff;
       background: linear-gradient(135deg, #0969da, #0a8f7a);
       border-color: #0969da;
     }
 
-    .manta-viewer-controls .manta-places-toggle[aria-pressed="false"] {
+    .manta-viewer-controls .manta-toolbar-toggle[aria-pressed="false"] {
       color: #0969da;
       background: #ffffff;
       border-color: #0969da;
@@ -329,12 +330,20 @@ function injectCss() {
       font-variant-numeric: tabular-nums;
     }
 
+    .manta-playback-controls {
+      align-items: center;
+      gap: 10px;
+      padding-top: 8px;
+      border-top: 1px solid rgba(31, 35, 40, 0.14);
+      flex-wrap: nowrap;
+    }
+
     .manta-time-controls {
       display: flex;
       align-items: center;
       gap: 8px;
-      flex: 1 1 420px;
-      min-width: min(420px, 100%);
+      flex: 1 1 auto;
+      min-width: min(520px, 100%);
     }
 
     .manta-time-controls input[type="range"] {
@@ -347,10 +356,59 @@ function injectCss() {
     }
 
     .manta-time-readout {
-      min-width: 170px;
+      min-width: 176px;
       text-align: right;
       color: #57606a;
+      font-size: 12px;
+      line-height: 1.2;
       font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+
+    .manta-play-button {
+      position: relative;
+      width: 34px;
+      height: 34px;
+      flex: 0 0 34px;
+      padding: 0;
+      border-radius: 50%;
+      border-color: #0969da;
+      background: #0969da;
+      color: #ffffff;
+      box-shadow: 0 6px 16px rgba(9, 105, 218, 0.22);
+    }
+
+    .manta-play-button:disabled {
+      border-color: #c9d1d9;
+      background: #eaeef2;
+      box-shadow: none;
+      cursor: not-allowed;
+    }
+
+    .manta-play-button::before {
+      content: '';
+      position: absolute;
+      left: 13px;
+      top: 9px;
+      width: 0;
+      height: 0;
+      border-top: 8px solid transparent;
+      border-bottom: 8px solid transparent;
+      border-left: 12px solid currentColor;
+    }
+
+    .manta-play-button[data-state="playing"]::before {
+      left: 11px;
+      top: 9px;
+      width: 4px;
+      height: 16px;
+      border: 0;
+      border-left: 4px solid currentColor;
+      border-right: 4px solid currentColor;
+    }
+
+    .manta-reset-view-button {
+      flex: 0 0 auto;
       white-space: nowrap;
     }
 
@@ -584,7 +642,7 @@ function injectCss() {
     .manta-gauge-overlay {
       position: absolute;
       inset: 0;
-      z-index: 27;
+      z-index: 24;
       overflow: hidden;
       pointer-events: none;
       contain: layout style;
@@ -597,7 +655,7 @@ function injectCss() {
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 2px;
+      gap: 0;
       transform: translate(-50%, -100%);
       transform-origin: 50% 100%;
       user-select: none;
@@ -607,34 +665,31 @@ function injectCss() {
     }
 
     .manta-gauge-label {
-      min-width: 34px;
-      padding: 4px 8px;
-      border: 1px solid rgba(255, 255, 255, 0.36);
-      border-radius: 6px;
-      color: #ffffff;
-      background: rgba(15, 23, 42, 0.92);
-      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.28);
-      font-size: 14px;
+      color: #0f172a;
+      font-size: 11px;
       font-weight: 850;
       line-height: 1.05;
       letter-spacing: 0;
       text-align: center;
       white-space: nowrap;
-      backdrop-filter: blur(8px);
+      text-shadow:
+        0 1px 0 rgba(255, 255, 255, 0.98),
+        0 0 5px rgba(255, 255, 255, 0.96),
+        0 2px 8px rgba(15, 23, 42, 0.2);
     }
 
     .manta-gauge-pin {
-      font-size: 38px;
+      font-size: 23px;
       line-height: 1;
       filter:
-        drop-shadow(0 2px 0 rgba(255, 255, 255, 0.98))
-        drop-shadow(0 8px 14px rgba(0, 0, 0, 0.5));
+        drop-shadow(0 1px 0 rgba(255, 255, 255, 0.98))
+        drop-shadow(0 3px 5px rgba(0, 0, 0, 0.32));
       transition: transform 120ms ease;
     }
 
     .manta-gauge-billboard:hover .manta-gauge-pin,
     .manta-gauge-billboard:focus-visible .manta-gauge-pin {
-      transform: translateY(-2px);
+      transform: translateY(-1px) scale(1.08);
     }
 
     .manta-gauge-section {
@@ -853,14 +908,27 @@ function injectCss() {
         font-size: 30px;
       }
 
-      .manta-gauge-label {
-        padding: 3px 6px;
-        font-size: 12px;
-      }
+	      .manta-gauge-label {
+	        font-size: 10px;
+	      }
 
-      .manta-gauge-pin {
-        font-size: 34px;
-      }
+	      .manta-gauge-pin {
+	        font-size: 21px;
+	      }
+
+	      .manta-playback-controls {
+	        flex-wrap: wrap;
+	      }
+
+	      .manta-time-controls {
+	        flex: 1 1 calc(100% - 48px);
+	        min-width: 0;
+	      }
+
+	      .manta-time-readout {
+	        min-width: 146px;
+	        font-size: 11px;
+	      }
 
       .manta-gauge-section-header {
         display: block;
@@ -970,16 +1038,17 @@ function setupDom(container) {
       </div>
     </div>
 
-    <div class="manta-viewer-controls">
-      <div class="manta-viewer-controls-row">
-      <label><input type="checkbox" id="toggle-terrain" checked> Terrain</label>
-      <span class="manta-toolbar-button-group" aria-label="Location controls">
-        <button id="toggle-map" type="button" aria-pressed="false" title="Fetch an online topographic basemap and drape it on the terrain mesh.">Map</button>
-        <button id="toggle-places" class="manta-places-toggle" type="button" aria-pressed="true" title="Show fixed city and NEOM site location billboards.">📍 Places on</button>
-      </span>
-      <label title="Choose the online basemap provider used by the Map button.">
-        Map source:
-        <select id="map-provider">
+	    <div class="manta-viewer-controls">
+	      <div class="manta-viewer-controls-row">
+	      <label><input type="checkbox" id="toggle-terrain" checked> Terrain</label>
+	      <span class="manta-toolbar-button-group" aria-label="Location controls">
+	        <button id="toggle-map" class="manta-toolbar-toggle" type="button" aria-pressed="false" title="Fetch an online topographic basemap and drape it on the terrain mesh.">Map</button>
+	        <button id="toggle-gauges" class="manta-toolbar-toggle manta-gauges-toggle" type="button" aria-pressed="true" title="Show gauge location billboards.">⏱️ Gauge on</button>
+	        <button id="toggle-places" class="manta-toolbar-toggle manta-places-toggle" type="button" aria-pressed="true" title="Show fixed city and NEOM site location billboards.">📍 Places on</button>
+	      </span>
+	      <label title="Choose the online basemap provider used by the Map button.">
+	        Map source:
+	        <select id="map-provider">
           <option value="esri_world_imagery_labels" selected>Esri Imagery + Labels</option>
           <option value="opentopomap">OpenStreetMap Topographic</option>
           <option value="esri_world_street">Esri Streets</option>
@@ -1007,19 +1076,22 @@ function setupDom(container) {
         <label title="Press Enter to apply. If the value is exactly 0, the hidden rule uses m > 0 to avoid including zero-m water cells.">
           Landslide m≥
           <input id="landslide-m-threshold" type="text" inputmode="decimal" value="-0.01" autocomplete="off" spellcheck="false">
-        </label>
-      </div>
+	        </label>
+	      </div>
 
-      <div class="manta-time-controls">
-        <button id="play-toggle" type="button" disabled>Play</button>
-        <input id="time-slider" type="range" min="0" max="0" value="0" step="1" disabled>
-        <span id="time-readout" class="manta-time-readout">frame 1/1</span>
-      </div>
+	      </div>
 
-      <button id="reset-camera" type="button">Reset view</button>
-      </div>
+	      <div class="manta-viewer-controls-row manta-playback-controls">
+	        <button id="play-toggle" class="manta-play-button" type="button" disabled data-state="paused" aria-label="Play animation" title="Play animation"></button>
+	        <div class="manta-time-controls">
+	        <input id="time-slider" type="range" min="0" max="0" value="0" step="1" disabled>
+	        <span id="time-readout" class="manta-time-readout">frame 1/1</span>
+	        </div>
 
-      <div class="manta-viewer-controls-row manta-analysis-controls" aria-label="Water analysis overlays">
+	      <button id="reset-camera" class="manta-reset-view-button" type="button">Reset view</button>
+	      </div>
+
+	      <div class="manta-viewer-controls-row manta-analysis-controls" aria-label="Water analysis overlays">
         <label title="Show current-frame inundation depth, filtered by the Water m threshold.">
           <input type="checkbox" id="toggle-inundation"> Inundation
         </label>
@@ -2128,6 +2200,9 @@ function renderGaugeBillboards(container) {
   const view = state.openGLRenderWindow;
   if (!overlay || !renderer || !view) return;
 
+  overlay.hidden = !state.gauges.visible;
+  if (!state.gauges.visible) return;
+
   const host = container.querySelector('.manta-vtk-host') ?? container;
   const rect = host.getBoundingClientRect();
   const framebufferSize = view.getFramebufferSize?.() ?? view.getSize?.() ?? [rect.width, rect.height];
@@ -2174,6 +2249,13 @@ function renderGaugeBillboards(container) {
     gauge.el.style.display = '';
     gauge.el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -100%)`;
   }
+}
+
+function syncGaugeBillboardButton(container) {
+  const button = container?.querySelector?.('#toggle-gauges');
+  if (!button) return;
+  button.setAttribute('aria-pressed', String(state.gauges.visible));
+  button.textContent = state.gauges.visible ? '⏱️ Gauge on' : '⏱️ Gauge';
 }
 
 function startGaugeBillboardLoop(container) {
@@ -2676,6 +2758,7 @@ async function setupGaugeExperience(container) {
   if (!overlay || !caseId || state.gauges.loadedCaseId === caseId) return;
 
   state.gauges.overlay = overlay;
+  syncGaugeBillboardButton(container);
 
   try {
     const data = await loadGaugeData();
@@ -2687,6 +2770,7 @@ async function setupGaugeExperience(container) {
     state.gauges.data = data;
     state.gauges.points = data.gauges;
     state.gauges.loadedCaseId = caseId;
+    syncGaugeBillboardButton(container);
     ensureGaugePanel(container, data);
     startGaugeBillboardLoop(container);
   } catch (error) {
@@ -5057,7 +5141,9 @@ function updateFrameReadout(displayFrameIndex = state.currentFrameIndex, syncSli
 
   if (playButton) {
     playButton.disabled = state.frameCount <= 1;
-    playButton.textContent = state.isPlaying ? 'Pause' : 'Play';
+    playButton.dataset.state = state.isPlaying ? 'playing' : 'paused';
+    playButton.setAttribute('aria-label', state.isPlaying ? 'Pause animation' : 'Play animation');
+    playButton.title = state.isPlaying ? 'Pause animation' : 'Play animation';
   }
 
   if (readout) {
@@ -5187,17 +5273,27 @@ function setupControls(container) {
       toggleMapOverlay(container).catch(console.error);
     });
   }
-  const placesButton = container.querySelector('#toggle-places');
-  if (placesButton) {
-    syncPlaceBillboardButton(container);
-    placesButton.addEventListener('click', (event) => {
-      event.stopPropagation();
+	  const placesButton = container.querySelector('#toggle-places');
+	  if (placesButton) {
+	    syncPlaceBillboardButton(container);
+	    placesButton.addEventListener('click', (event) => {
+	      event.stopPropagation();
       state.places.visible = !state.places.visible;
       syncPlaceBillboardButton(container);
-      renderPlaceBillboards(container);
-    });
-  }
-  const mapProviderSelect = container.querySelector('#map-provider');
+	      renderPlaceBillboards(container);
+	    });
+	  }
+	  const gaugesButton = container.querySelector('#toggle-gauges');
+	  if (gaugesButton) {
+	    syncGaugeBillboardButton(container);
+	    gaugesButton.addEventListener('click', (event) => {
+	      event.stopPropagation();
+	      state.gauges.visible = !state.gauges.visible;
+	      syncGaugeBillboardButton(container);
+	      renderGaugeBillboards(container);
+	    });
+	  }
+	  const mapProviderSelect = container.querySelector('#map-provider');
   if (mapProviderSelect) {
     mapProviderSelect.value = state.mapOverlay.providerId;
     for (const eventName of ['pointerdown', 'mousedown', 'touchstart', 'wheel', 'dblclick']) {

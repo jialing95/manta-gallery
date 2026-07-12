@@ -74,7 +74,7 @@ toc: false
     Loading MANTA Gallery viewer...
   </div>
 </div>
-<script type="module" src="../assets/js/manta_case_viewer.bundle.js?v=gauges-20260712"></script>
+<script type="module" src="../assets/js/manta_case_viewer.bundle.js?v=gauges-ui-20260712"></script>
 ```
 :::
 
