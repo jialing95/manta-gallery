@@ -50,6 +50,8 @@ docs/assets/data/
 docs/assets/data/*
 !docs/assets/data/places/
 !docs/assets/data/places/*.geojson
+!docs/assets/data/gauges/
+!docs/assets/data/gauges/*.json
 
 /.quarto/
 **/*.quarto_ipynb

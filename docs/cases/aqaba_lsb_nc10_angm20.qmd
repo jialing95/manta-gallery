@@ -17,7 +17,7 @@ Aqaba LSB NC10 angm20 is an interactive 3D D-Claw landslide-tsunami case for the
     Loading MANTA Gallery viewer...
   </div>
 </div>
-<script type="module" src="../assets/js/manta_case_viewer.bundle.js?v=places-toolbar-20260712"></script>
+<script type="module" src="../assets/js/manta_case_viewer.bundle.js?v=gauges-20260712"></script>
 ```
 :::
 

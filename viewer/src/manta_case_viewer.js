@@ -26,6 +26,9 @@ const PLACE_DATASETS = [
 ];
 
 const PLACE_RENDER_LIFT = 95.0;
+const GAUGE_RENDER_LIFT = 130.0;
+const GAUGE_EMOJI = '📈';
+const GAUGE_PANEL_ID = 'manta-gauge-panel';
 
 const state = {
   caseInfo: null,
@@ -119,6 +122,15 @@ const state = {
     raf: null,
     loaded: false,
     visible: true,
+  },
+  gauges: {
+    overlay: null,
+    data: null,
+    points: [],
+    raf: null,
+    loadedCaseId: null,
+    modal: null,
+    charts: new Set(),
   },
 };
 
@@ -569,6 +581,267 @@ function injectCss() {
         drop-shadow(0 6px 10px rgba(0, 0, 0, 0.45));
     }
 
+    .manta-gauge-overlay {
+      position: absolute;
+      inset: 0;
+      z-index: 27;
+      overflow: hidden;
+      pointer-events: none;
+      contain: layout style;
+    }
+
+    .manta-gauge-billboard {
+      position: absolute;
+      left: 0;
+      top: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      transform: translate(-50%, -100%);
+      transform-origin: 50% 100%;
+      user-select: none;
+      will-change: transform;
+      cursor: pointer;
+      pointer-events: auto;
+    }
+
+    .manta-gauge-label {
+      min-width: 34px;
+      padding: 4px 8px;
+      border: 1px solid rgba(255, 255, 255, 0.36);
+      border-radius: 6px;
+      color: #ffffff;
+      background: rgba(15, 23, 42, 0.92);
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.28);
+      font-size: 14px;
+      font-weight: 850;
+      line-height: 1.05;
+      letter-spacing: 0;
+      text-align: center;
+      white-space: nowrap;
+      backdrop-filter: blur(8px);
+    }
+
+    .manta-gauge-pin {
+      font-size: 38px;
+      line-height: 1;
+      filter:
+        drop-shadow(0 2px 0 rgba(255, 255, 255, 0.98))
+        drop-shadow(0 8px 14px rgba(0, 0, 0, 0.5));
+      transition: transform 120ms ease;
+    }
+
+    .manta-gauge-billboard:hover .manta-gauge-pin,
+    .manta-gauge-billboard:focus-visible .manta-gauge-pin {
+      transform: translateY(-2px);
+    }
+
+    .manta-gauge-section {
+      max-width: 1480px;
+      margin: 34px auto 0;
+      padding: 0 0 10px;
+      color: #0f172a;
+    }
+
+    .manta-gauge-section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: end;
+      gap: 18px;
+      margin-bottom: 14px;
+    }
+
+    .manta-gauge-section h2 {
+      margin: 0;
+      color: #0f172a;
+      font-size: 28px;
+      line-height: 1.18;
+      font-weight: 850;
+      letter-spacing: 0;
+    }
+
+    .manta-gauge-section-meta {
+      color: #57606a;
+      font-size: 14px;
+      line-height: 1.25;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+
+    .manta-gauge-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .manta-gauge-card {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      min-height: 238px;
+      padding: 14px;
+      border: 1px solid #d0d7de;
+      border-radius: 8px;
+      background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+      box-shadow: 0 10px 26px rgba(15, 23, 42, 0.06);
+      cursor: zoom-in;
+      outline: none;
+      transition:
+        border-color 120ms ease,
+        box-shadow 120ms ease,
+        transform 120ms ease;
+    }
+
+    .manta-gauge-card:hover,
+    .manta-gauge-card:focus-visible,
+    .manta-gauge-card.is-target {
+      border-color: #0969da;
+      box-shadow: 0 14px 34px rgba(9, 105, 218, 0.14);
+      transform: translateY(-1px);
+    }
+
+    .manta-gauge-card-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+
+    .manta-gauge-card-title {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+      color: #0f172a;
+      font-size: 17px;
+      line-height: 1.15;
+      font-weight: 850;
+      letter-spacing: 0;
+    }
+
+    .manta-gauge-card-variable {
+      color: #57606a;
+      font-size: 13px;
+      line-height: 1.2;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .manta-gauge-chart-wrap {
+      position: relative;
+      flex: 1 1 auto;
+      min-height: 174px;
+    }
+
+    .manta-gauge-chart {
+      display: block;
+      width: 100%;
+      height: 174px;
+      touch-action: none;
+    }
+
+    .manta-gauge-tooltip {
+      position: absolute;
+      z-index: 2;
+      min-width: 132px;
+      padding: 7px 8px;
+      border: 1px solid rgba(15, 23, 42, 0.12);
+      border-radius: 6px;
+      color: #0f172a;
+      background: rgba(255, 255, 255, 0.96);
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
+      font-size: 12px;
+      line-height: 1.35;
+      font-variant-numeric: tabular-nums;
+      pointer-events: none;
+      white-space: nowrap;
+      transform: translate(12px, -50%);
+      backdrop-filter: blur(8px);
+    }
+
+    .manta-gauge-tooltip[hidden] {
+      display: none;
+    }
+
+    .manta-gauge-modal-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 3000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 30px;
+      background: rgba(15, 23, 42, 0.58);
+    }
+
+    .manta-gauge-modal {
+      width: min(1120px, calc(100vw - 60px));
+      max-height: calc(100vh - 60px);
+      display: flex;
+      flex-direction: column;
+      padding: 18px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 8px;
+      background: #ffffff;
+      box-shadow: 0 28px 90px rgba(0, 0, 0, 0.34);
+    }
+
+    .manta-gauge-modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      margin-bottom: 10px;
+    }
+
+    .manta-gauge-modal-title {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      min-width: 0;
+      color: #0f172a;
+      font-size: 22px;
+      line-height: 1.18;
+      font-weight: 850;
+      letter-spacing: 0;
+    }
+
+    .manta-gauge-modal-title span {
+      color: #57606a;
+      font-size: 14px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .manta-gauge-modal-close {
+      flex: 0 0 auto;
+      width: 34px;
+      height: 34px;
+      border: 1px solid #d0d7de;
+      border-radius: 8px;
+      color: #24292f;
+      background: #ffffff;
+      font-size: 22px;
+      line-height: 1;
+      cursor: pointer;
+    }
+
+    .manta-gauge-modal-chart-wrap {
+      position: relative;
+      min-height: 460px;
+    }
+
+    .manta-gauge-modal-chart {
+      display: block;
+      width: 100%;
+      height: min(62vh, 560px);
+      min-height: 460px;
+      touch-action: none;
+    }
+
     @media (max-width: 720px) {
       .manta-place-label {
         max-width: 126px;
@@ -579,8 +852,50 @@ function injectCss() {
       .manta-place-pin {
         font-size: 30px;
       }
+
+      .manta-gauge-label {
+        padding: 3px 6px;
+        font-size: 12px;
+      }
+
+      .manta-gauge-pin {
+        font-size: 34px;
+      }
+
+      .manta-gauge-section-header {
+        display: block;
+      }
+
+      .manta-gauge-section-meta {
+        margin-top: 6px;
+        white-space: normal;
+      }
+
+      .manta-gauge-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .manta-gauge-modal-backdrop {
+        padding: 14px;
+      }
+
+      .manta-gauge-modal {
+        width: calc(100vw - 28px);
+        max-height: calc(100vh - 28px);
+      }
+
+      .manta-gauge-modal-chart-wrap,
+      .manta-gauge-modal-chart {
+        min-height: 340px;
+      }
     }
-`;
+
+    @media (min-width: 721px) and (max-width: 1080px) {
+      .manta-gauge-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+	`;
   document.head.appendChild(style);
 }
 
@@ -597,9 +912,10 @@ function setupDom(container) {
   container.innerHTML = `
     <div class="manta-vtk-host"></div>
 
-    <div class="manta-place-overlay" aria-label="Place locations"></div>
+	    <div class="manta-place-overlay" aria-label="Place locations"></div>
+	    <div class="manta-gauge-overlay" aria-label="Gauge locations"></div>
 
-    <div class="manta-viewer-status">
+	    <div class="manta-viewer-status">
       Loading MANTA Gallery viewer...
     </div>
 
@@ -1667,6 +1983,715 @@ async function setupPlaceBillboards(container) {
     startPlaceBillboardLoop(container);
   } catch (error) {
     console.warn('[MANTA Gallery] Failed to load place billboards:', error);
+  }
+}
+
+function getCaseAssetId() {
+  const parts = state.caseBaseUrl.pathname.split('/').filter(Boolean);
+  return decodeURIComponent(parts[parts.length - 1] ?? '');
+}
+
+function getGaugesBaseUrl() {
+  return new URL('../../gauges/', state.caseBaseUrl);
+}
+
+function createGaugeUrl(caseId) {
+  return new URL(`${caseId}.json`, getGaugesBaseUrl());
+}
+
+function getFiniteRange(values) {
+  let min = Infinity;
+  let max = -Infinity;
+  for (const value of values ?? []) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) continue;
+    min = Math.min(min, numeric);
+    max = Math.max(max, numeric);
+  }
+  return Number.isFinite(min) && Number.isFinite(max) ? [min, max] : null;
+}
+
+function getDeclaredRange(range, values) {
+  if (Array.isArray(range) && range.length >= 2) {
+    const min = Number(range[0]);
+    const max = Number(range[1]);
+    if (Number.isFinite(min) && Number.isFinite(max)) return [min, max];
+  }
+  return getFiniteRange(values);
+}
+
+function normalizeGaugeSeries(rawTime, rawEta) {
+  const count = Math.min(
+    Array.isArray(rawTime) ? rawTime.length : 0,
+    Array.isArray(rawEta) ? rawEta.length : 0
+  );
+  const time = [];
+  const eta = [];
+  for (let index = 0; index < count; index += 1) {
+    const t = Number(rawTime[index]);
+    const value = Number(rawEta[index]);
+    if (!Number.isFinite(t) || !Number.isFinite(value)) continue;
+    time.push(t);
+    eta.push(value);
+  }
+  return { time, eta };
+}
+
+function normalizeGaugePoint(rawGauge) {
+  const id = Number(rawGauge?.id);
+  const x = Number(rawGauge?.x);
+  const y = Number(rawGauge?.y);
+  if (!Number.isInteger(id) || !Number.isFinite(x) || !Number.isFinite(y)) return null;
+
+  const { time, eta } = normalizeGaugeSeries(rawGauge?.time, rawGauge?.eta);
+  if (time.length < 2 || eta.length !== time.length) return null;
+
+  const terrainZ = getPlaceTerrainZ(x, y);
+  const z = (Number.isFinite(terrainZ) ? terrainZ : 0.0) + GAUGE_RENDER_LIFT;
+  const name = String(rawGauge?.name ?? `G${String(id).padStart(2, '0')}`).trim();
+
+  return {
+    id,
+    name,
+    gaugeNo: Number(rawGauge?.gauge_no),
+    x,
+    y,
+    z,
+    time,
+    eta,
+    timeRange: getDeclaredRange(rawGauge?.time_range, time),
+    etaRange: getDeclaredRange(rawGauge?.eta_range, eta),
+    el: null,
+  };
+}
+
+async function loadGaugeData() {
+  const caseId = getCaseAssetId();
+  if (!caseId) throw Error('Cannot determine case id for gauge data.');
+
+  const payload = await fetchJson(createGaugeUrl(caseId));
+  const gauges = (Array.isArray(payload?.gauges) ? payload.gauges : [])
+    .map(normalizeGaugePoint)
+    .filter(Boolean)
+    .sort((a, b) => a.id - b.id);
+  if (gauges.length === 0) throw Error(`No valid gauges in ${caseId}.json.`);
+
+  return {
+    ...payload,
+    case_id: String(payload?.case_id ?? caseId),
+    variable: payload?.variable ?? { symbol: 'eta', unit: 'm' },
+    gauges,
+  };
+}
+
+function createGaugeBillboardElement(gauge, container) {
+  const el = document.createElement('div');
+  el.className = 'manta-gauge-billboard';
+  el.tabIndex = 0;
+  el.title = `${gauge.name} gauge time series`;
+
+  const label = document.createElement('div');
+  label.className = 'manta-gauge-label';
+  label.textContent = gauge.name;
+
+  const pin = document.createElement('div');
+  pin.className = 'manta-gauge-pin';
+  pin.textContent = GAUGE_EMOJI;
+
+  el.append(label, pin);
+
+  for (const eventName of ['pointerdown', 'mousedown', 'touchstart', 'wheel', 'click']) {
+    el.addEventListener(eventName, (event) => {
+      event.stopPropagation();
+    }, { passive: true });
+  }
+
+  el.addEventListener('dblclick', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    scrollToGaugePanel(container, gauge.id);
+  });
+  el.addEventListener('keydown', (event) => {
+    event.stopPropagation();
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      scrollToGaugePanel(container, gauge.id);
+    }
+  });
+
+  return el;
+}
+
+function renderGaugeBillboards(container) {
+  const overlay = state.gauges.overlay ?? container.querySelector('.manta-gauge-overlay');
+  const renderer = state.renderer;
+  const view = state.openGLRenderWindow;
+  if (!overlay || !renderer || !view) return;
+
+  const host = container.querySelector('.manta-vtk-host') ?? container;
+  const rect = host.getBoundingClientRect();
+  const framebufferSize = view.getFramebufferSize?.() ?? view.getSize?.() ?? [rect.width, rect.height];
+  const framebufferWidth = Number(framebufferSize[0]);
+  const framebufferHeight = Number(framebufferSize[1]);
+  if (
+    rect.width <= 0
+    || rect.height <= 0
+    || !Number.isFinite(framebufferWidth)
+    || !Number.isFinite(framebufferHeight)
+    || framebufferWidth <= 0
+    || framebufferHeight <= 0
+  ) {
+    return;
+  }
+
+  const scaleX = rect.width / framebufferWidth;
+  const scaleY = rect.height / framebufferHeight;
+  for (const gauge of state.gauges.points) {
+    if (!gauge.el) continue;
+    const display = view.worldToDisplay?.(gauge.x, gauge.y, gauge.z, renderer);
+    const displayX = Number(display?.[0]);
+    const displayY = Number(display?.[1]);
+    const displayZ = Number(display?.[2]);
+    if (
+      !Number.isFinite(displayX)
+      || !Number.isFinite(displayY)
+      || !Number.isFinite(displayZ)
+      || displayZ < -0.05
+      || displayZ > 1.05
+    ) {
+      gauge.el.style.display = 'none';
+      continue;
+    }
+
+    const x = displayX * scaleX;
+    const y = rect.height - displayY * scaleY;
+    const margin = 220;
+    if (x < -margin || x > rect.width + margin || y < -margin || y > rect.height + margin) {
+      gauge.el.style.display = 'none';
+      continue;
+    }
+
+    gauge.el.style.display = '';
+    gauge.el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -100%)`;
+  }
+}
+
+function startGaugeBillboardLoop(container) {
+  if (state.gauges.raf !== null) {
+    window.cancelAnimationFrame(state.gauges.raf);
+    state.gauges.raf = null;
+  }
+
+  const tick = () => {
+    renderGaugeBillboards(container);
+    state.gauges.raf = window.requestAnimationFrame(tick);
+  };
+  tick();
+}
+
+function getGaugeContentRoot(container) {
+  return container.closest('main')
+    ?? document.getElementById('quarto-document-content')
+    ?? document.querySelector('main.content')
+    ?? container.parentElement
+    ?? document.body;
+}
+
+function getGaugePanelAnchor(container) {
+  const root = getGaugeContentRoot(container);
+  const foldouts = Array.from(root.querySelectorAll('details.manta-foldout'));
+  if (foldouts.length > 0) return foldouts[foldouts.length - 1];
+  return root.querySelector('.manta-case-hero') ?? container;
+}
+
+function formatGaugeNumber(value, digits = 3) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 'n/a';
+  const abs = Math.abs(numeric);
+  const precision = abs >= 100 ? Math.min(digits, 1) : abs >= 10 ? Math.min(digits, 2) : digits;
+  return numeric.toFixed(precision);
+}
+
+function getGaugeTimeUnit(range) {
+  const span = Math.max(Math.abs(range.tMax - range.tMin), Math.abs(range.tMax), Math.abs(range.tMin));
+  return span >= 600 ? 'min' : 's';
+}
+
+function formatGaugeTime(value, range, includeSeconds = false) {
+  const unit = getGaugeTimeUnit(range);
+  if (unit === 'min') {
+    const minutes = value / 60;
+    const text = `${formatGaugeNumber(minutes, Math.abs(minutes) >= 10 ? 1 : 2)} min`;
+    return includeSeconds ? `${text} (${formatGaugeNumber(value, 1)} s)` : text;
+  }
+  return `${formatGaugeNumber(value, Math.abs(value) >= 10 ? 1 : 2)} s`;
+}
+
+function getGaugeChartRanges(gauge) {
+  const timeRange = gauge.timeRange ?? getFiniteRange(gauge.time) ?? [0, 1];
+  let tMin = Number(timeRange[0]);
+  let tMax = Number(timeRange[1]);
+  if (!Number.isFinite(tMin) || !Number.isFinite(tMax) || tMin === tMax) {
+    tMin = 0;
+    tMax = 1;
+  }
+  if (tMin > tMax) [tMin, tMax] = [tMax, tMin];
+
+  const etaRange = gauge.etaRange ?? getFiniteRange(gauge.eta) ?? [-1, 1];
+  let eMin = Number(etaRange[0]);
+  let eMax = Number(etaRange[1]);
+  if (!Number.isFinite(eMin) || !Number.isFinite(eMax)) {
+    eMin = -1;
+    eMax = 1;
+  }
+  if (eMin > eMax) [eMin, eMax] = [eMax, eMin];
+  const span = Math.max(eMax - eMin, 1e-6);
+  const pad = Math.max(span * 0.12, 0.015);
+  eMin -= pad;
+  eMax += pad;
+
+  return { tMin, tMax, eMin, eMax };
+}
+
+function getGaugeChartLayout(width, height, compact) {
+  const left = compact ? 46 : 64;
+  const right = compact ? 14 : 22;
+  const top = compact ? 15 : 24;
+  const bottom = compact ? 32 : 48;
+  return {
+    left,
+    right,
+    top,
+    bottom,
+    plotWidth: Math.max(1, width - left - right),
+    plotHeight: Math.max(1, height - top - bottom),
+  };
+}
+
+function gaugeX(value, range, layout) {
+  const ratio = (value - range.tMin) / Math.max(range.tMax - range.tMin, 1e-9);
+  return layout.left + ratio * layout.plotWidth;
+}
+
+function gaugeY(value, range, layout) {
+  const ratio = (value - range.eMin) / Math.max(range.eMax - range.eMin, 1e-9);
+  return layout.top + (1 - ratio) * layout.plotHeight;
+}
+
+function prepareGaugeCanvas(canvas) {
+  const rect = canvas.getBoundingClientRect();
+  const width = Math.max(1, Math.round(rect.width));
+  const height = Math.max(1, Math.round(rect.height));
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const pixelWidth = Math.max(1, Math.round(width * dpr));
+  const pixelHeight = Math.max(1, Math.round(height * dpr));
+  if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
+    canvas.width = pixelWidth;
+    canvas.height = pixelHeight;
+  }
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return { ctx, width, height };
+}
+
+function drawGaugeChart(chart) {
+  const { canvas, gauge, compact, hoverIndex } = chart;
+  if (!canvas.isConnected) return;
+
+  const { ctx, width, height } = prepareGaugeCanvas(canvas);
+  const range = getGaugeChartRanges(gauge);
+  const layout = getGaugeChartLayout(width, height, compact);
+  const plotRight = layout.left + layout.plotWidth;
+  const plotBottom = layout.top + layout.plotHeight;
+
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(layout.left, layout.top, layout.plotWidth, layout.plotHeight);
+
+  ctx.strokeStyle = '#eaeef2';
+  ctx.lineWidth = 1;
+  ctx.font = `${compact ? 11 : 12}px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
+  ctx.fillStyle = '#57606a';
+  ctx.textBaseline = 'middle';
+
+  for (let i = 0; i <= 4; i += 1) {
+    const ratio = i / 4;
+    const x = layout.left + ratio * layout.plotWidth;
+    const t = range.tMin + ratio * (range.tMax - range.tMin);
+    ctx.beginPath();
+    ctx.moveTo(x, layout.top);
+    ctx.lineTo(x, plotBottom);
+    ctx.stroke();
+    ctx.textAlign = i === 0 ? 'left' : i === 4 ? 'right' : 'center';
+    ctx.fillText(formatGaugeTime(t, range), x, plotBottom + (compact ? 18 : 22));
+  }
+
+  ctx.textAlign = 'right';
+  for (let i = 0; i <= 4; i += 1) {
+    const ratio = i / 4;
+    const y = layout.top + ratio * layout.plotHeight;
+    const value = range.eMax - ratio * (range.eMax - range.eMin);
+    ctx.beginPath();
+    ctx.moveTo(layout.left, y);
+    ctx.lineTo(plotRight, y);
+    ctx.stroke();
+    ctx.fillText(formatGaugeNumber(value, compact ? 2 : 3), layout.left - 7, y);
+  }
+
+  if (range.eMin < 0 && range.eMax > 0) {
+    const y0 = gaugeY(0, range, layout);
+    ctx.save();
+    ctx.strokeStyle = 'rgba(15, 23, 42, 0.24)';
+    ctx.setLineDash([5, 4]);
+    ctx.beginPath();
+    ctx.moveTo(layout.left, y0);
+    ctx.lineTo(plotRight, y0);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  ctx.strokeStyle = '#8c959f';
+  ctx.lineWidth = 1.2;
+  ctx.strokeRect(layout.left, layout.top, layout.plotWidth, layout.plotHeight);
+
+  const time = gauge.time;
+  const eta = gauge.eta;
+  const stride = Math.max(1, Math.floor(time.length / Math.max(1, layout.plotWidth * 2)));
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(layout.left, layout.top, layout.plotWidth, layout.plotHeight);
+  ctx.clip();
+  ctx.strokeStyle = '#0969da';
+  ctx.lineWidth = compact ? 1.9 : 2.4;
+  ctx.beginPath();
+  let hasPoint = false;
+  for (let index = 0; index < time.length; index += stride) {
+    const x = gaugeX(time[index], range, layout);
+    const y = gaugeY(eta[index], range, layout);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    if (!hasPoint) {
+      ctx.moveTo(x, y);
+      hasPoint = true;
+    } else {
+      ctx.lineTo(x, y);
+    }
+  }
+  const last = time.length - 1;
+  if (last >= 0 && last % stride !== 0) {
+    ctx.lineTo(gaugeX(time[last], range, layout), gaugeY(eta[last], range, layout));
+  }
+  ctx.stroke();
+
+  if (Number.isInteger(hoverIndex) && hoverIndex >= 0 && hoverIndex < time.length) {
+    const x = gaugeX(time[hoverIndex], range, layout);
+    const y = gaugeY(eta[hoverIndex], range, layout);
+    ctx.strokeStyle = 'rgba(245, 158, 11, 0.88)';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(x, layout.top);
+    ctx.lineTo(x, plotBottom);
+    ctx.moveTo(layout.left, y);
+    ctx.lineTo(plotRight, y);
+    ctx.stroke();
+
+    ctx.fillStyle = '#f59e0b';
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(x, y, compact ? 4 : 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  if (!compact) {
+    ctx.fillStyle = '#57606a';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText(`time (${getGaugeTimeUnit(range)})`, layout.left + layout.plotWidth / 2, height - 8);
+    ctx.save();
+    ctx.translate(15, layout.top + layout.plotHeight / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.fillText('eta (m)', 0, 0);
+    ctx.restore();
+  }
+}
+
+function findNearestGaugeIndex(time, target) {
+  if (!Array.isArray(time) || time.length === 0 || !Number.isFinite(target)) return null;
+  let low = 0;
+  let high = time.length - 1;
+  while (low < high) {
+    const mid = Math.floor((low + high) / 2);
+    if (time[mid] < target) low = mid + 1;
+    else high = mid;
+  }
+  if (low <= 0) return 0;
+  if (low >= time.length) return time.length - 1;
+  const left = low - 1;
+  return Math.abs(time[left] - target) <= Math.abs(time[low] - target) ? left : low;
+}
+
+function updateGaugeTooltip(chart, event) {
+  const { canvas, gauge, tooltip, compact } = chart;
+  const rect = canvas.getBoundingClientRect();
+  const range = getGaugeChartRanges(gauge);
+  const layout = getGaugeChartLayout(rect.width, rect.height, compact);
+  const localX = event.clientX - rect.left;
+  const clampedX = Math.max(layout.left, Math.min(layout.left + layout.plotWidth, localX));
+  const ratio = (clampedX - layout.left) / Math.max(layout.plotWidth, 1);
+  const targetTime = range.tMin + ratio * (range.tMax - range.tMin);
+  const index = findNearestGaugeIndex(gauge.time, targetTime);
+  chart.hoverIndex = index;
+  drawGaugeChart(chart);
+
+  if (!tooltip || index === null) return;
+  const x = gaugeX(gauge.time[index], range, layout);
+  const y = gaugeY(gauge.eta[index], range, layout);
+  tooltip.hidden = false;
+  tooltip.replaceChildren();
+  const title = document.createElement('strong');
+  title.textContent = gauge.name;
+  const timeLine = document.createElement('div');
+  timeLine.textContent = `t = ${formatGaugeTime(gauge.time[index], range, true)}`;
+  const etaLine = document.createElement('div');
+  etaLine.textContent = `eta = ${formatGaugeNumber(gauge.eta[index], 4)} m`;
+  tooltip.append(title, timeLine, etaLine);
+  tooltip.style.left = `${Math.max(8, Math.min(rect.width - 154, x))}px`;
+  tooltip.style.top = `${Math.max(18, Math.min(rect.height - 32, y))}px`;
+}
+
+function attachGaugeChart(canvas, gauge, options = {}) {
+  const chart = {
+    canvas,
+    gauge,
+    compact: options.compact !== false,
+    tooltip: options.tooltip ?? null,
+    hoverIndex: null,
+    resizeObserver: null,
+    abortController: new AbortController(),
+    destroy: null,
+  };
+
+  const signal = chart.abortController.signal;
+  const redraw = () => drawGaugeChart(chart);
+  chart.redraw = redraw;
+  if (typeof ResizeObserver === 'function') {
+    chart.resizeObserver = new ResizeObserver(redraw);
+    chart.resizeObserver.observe(canvas);
+  } else {
+    window.addEventListener('resize', redraw, { signal });
+  }
+
+  canvas.addEventListener('pointermove', (event) => {
+    updateGaugeTooltip(chart, event);
+  }, { signal });
+  canvas.addEventListener('pointerleave', () => {
+    chart.hoverIndex = null;
+    if (chart.tooltip) chart.tooltip.hidden = true;
+    drawGaugeChart(chart);
+  }, { signal });
+  canvas.addEventListener('pointerdown', (event) => {
+    event.stopPropagation();
+  }, { signal, passive: true });
+
+  chart.destroy = () => {
+    chart.abortController.abort();
+    chart.resizeObserver?.disconnect();
+    state.gauges.charts.delete(chart);
+  };
+
+  state.gauges.charts.add(chart);
+  window.requestAnimationFrame(redraw);
+  return chart;
+}
+
+function redrawGaugeCharts() {
+  for (const chart of state.gauges.charts) {
+    chart.redraw?.();
+  }
+}
+
+function closeGaugeModal() {
+  const modal = state.gauges.modal;
+  if (!modal) return;
+  modal.chart?.destroy?.();
+  document.removeEventListener('keydown', modal.onKeyDown);
+  modal.backdrop.remove();
+  state.gauges.modal = null;
+}
+
+function openGaugeModal(gauge) {
+  closeGaugeModal();
+
+  const backdrop = document.createElement('div');
+  backdrop.className = 'manta-gauge-modal-backdrop';
+
+  const dialog = document.createElement('div');
+  dialog.className = 'manta-gauge-modal';
+  dialog.setAttribute('role', 'dialog');
+  dialog.setAttribute('aria-modal', 'true');
+  dialog.setAttribute('aria-label', `${gauge.name} gauge time series`);
+
+  const header = document.createElement('div');
+  header.className = 'manta-gauge-modal-header';
+
+  const title = document.createElement('div');
+  title.className = 'manta-gauge-modal-title';
+  title.textContent = `${GAUGE_EMOJI} ${gauge.name}`;
+  const variable = document.createElement('span');
+  variable.textContent = 'eta (m)';
+  title.appendChild(variable);
+
+  const closeButton = document.createElement('button');
+  closeButton.className = 'manta-gauge-modal-close';
+  closeButton.type = 'button';
+  closeButton.title = 'Close';
+  closeButton.textContent = '×';
+  closeButton.addEventListener('click', closeGaugeModal);
+
+  header.append(title, closeButton);
+
+  const chartWrap = document.createElement('div');
+  chartWrap.className = 'manta-gauge-modal-chart-wrap';
+  const canvas = document.createElement('canvas');
+  canvas.className = 'manta-gauge-modal-chart';
+  const tooltip = document.createElement('div');
+  tooltip.className = 'manta-gauge-tooltip';
+  tooltip.hidden = true;
+  chartWrap.append(canvas, tooltip);
+
+  dialog.append(header, chartWrap);
+  backdrop.appendChild(dialog);
+
+  backdrop.addEventListener('click', (event) => {
+    if (event.target === backdrop) closeGaugeModal();
+  });
+  const onKeyDown = (event) => {
+    if (event.key === 'Escape') closeGaugeModal();
+  };
+  document.addEventListener('keydown', onKeyDown);
+
+  document.body.appendChild(backdrop);
+  const chart = attachGaugeChart(canvas, gauge, { compact: false, tooltip });
+  state.gauges.modal = { backdrop, chart, onKeyDown };
+  window.requestAnimationFrame(() => chart.redraw?.());
+}
+
+function createGaugeCard(gauge) {
+  const card = document.createElement('article');
+  card.className = 'manta-gauge-card';
+  card.tabIndex = 0;
+  card.setAttribute('role', 'button');
+  card.setAttribute('aria-label', `${gauge.name} gauge time series`);
+  card.dataset.gaugeId = String(gauge.id);
+
+  const header = document.createElement('div');
+  header.className = 'manta-gauge-card-header';
+
+  const title = document.createElement('div');
+  title.className = 'manta-gauge-card-title';
+  title.textContent = `${GAUGE_EMOJI} ${gauge.name}`;
+
+  const variable = document.createElement('div');
+  variable.className = 'manta-gauge-card-variable';
+  variable.textContent = 'eta (m)';
+
+  header.append(title, variable);
+
+  const chartWrap = document.createElement('div');
+  chartWrap.className = 'manta-gauge-chart-wrap';
+  const canvas = document.createElement('canvas');
+  canvas.className = 'manta-gauge-chart';
+  const tooltip = document.createElement('div');
+  tooltip.className = 'manta-gauge-tooltip';
+  tooltip.hidden = true;
+  chartWrap.append(canvas, tooltip);
+
+  card.append(header, chartWrap);
+  card.addEventListener('click', () => openGaugeModal(gauge));
+  card.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      openGaugeModal(gauge);
+    }
+  });
+
+  attachGaugeChart(canvas, gauge, { compact: true, tooltip });
+  return card;
+}
+
+function ensureGaugePanel(container, data = state.gauges.data) {
+  if (!data?.gauges?.length) return null;
+
+  const existing = document.getElementById(GAUGE_PANEL_ID);
+  if (existing?.dataset.caseId === data.case_id) return existing;
+  existing?.remove();
+  closeGaugeModal();
+  for (const chart of Array.from(state.gauges.charts)) chart.destroy?.();
+
+  const section = document.createElement('section');
+  section.id = GAUGE_PANEL_ID;
+  section.className = 'manta-gauge-section';
+  section.dataset.caseId = data.case_id;
+
+  const header = document.createElement('div');
+  header.className = 'manta-gauge-section-header';
+  const title = document.createElement('h2');
+  title.textContent = 'Gauge Time Series';
+  const meta = document.createElement('div');
+  meta.className = 'manta-gauge-section-meta';
+  meta.textContent = `${data.gauges.length} gauges · eta(t)`;
+  header.append(title, meta);
+
+  const grid = document.createElement('div');
+  grid.className = 'manta-gauge-grid';
+  for (const gauge of data.gauges) {
+    grid.appendChild(createGaugeCard(gauge));
+  }
+
+  section.append(header, grid);
+  const anchor = getGaugePanelAnchor(container);
+  anchor.insertAdjacentElement('afterend', section);
+  window.requestAnimationFrame(redrawGaugeCharts);
+  return section;
+}
+
+function scrollToGaugePanel(container, gaugeId) {
+  const section = ensureGaugePanel(container);
+  if (!section) return;
+
+  const target = section.querySelector(`.manta-gauge-card[data-gauge-id="${gaugeId}"]`) ?? section;
+  target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  target.classList.add('is-target');
+  window.setTimeout(() => {
+    target.classList.remove('is-target');
+  }, 1400);
+}
+
+async function setupGaugeExperience(container) {
+  const overlay = container.querySelector('.manta-gauge-overlay');
+  const caseId = getCaseAssetId();
+  if (!overlay || !caseId || state.gauges.loadedCaseId === caseId) return;
+
+  state.gauges.overlay = overlay;
+
+  try {
+    const data = await loadGaugeData();
+    overlay.replaceChildren();
+    for (const gauge of data.gauges) {
+      gauge.el = createGaugeBillboardElement(gauge, container);
+      overlay.appendChild(gauge.el);
+    }
+    state.gauges.data = data;
+    state.gauges.points = data.gauges;
+    state.gauges.loadedCaseId = caseId;
+    ensureGaugePanel(container, data);
+    startGaugeBillboardLoop(container);
+  } catch (error) {
+    overlay.hidden = true;
+    console.warn('[MANTA Gallery] Failed to load gauge experience:', error);
   }
 }
 
@@ -4719,11 +5744,12 @@ async function main() {
     setupScene(host);
 
     const { caseInfo, terrain, water, landslide, frameIndex } = await loadCaseAndData(container);
-    addActors(terrain, water, landslide);
-    setupControls(container);
-    await setupPlaceBillboards(container);
+	    addActors(terrain, water, landslide);
+	    setupControls(container);
+	    await setupPlaceBillboards(container);
+	    await setupGaugeExperience(container);
 
-    startMapOverlays(container);
+	    startMapOverlays(container);
     await updateAmrForCurrentFrame(container);
 
     setStatus(
