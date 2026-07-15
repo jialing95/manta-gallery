@@ -1,0 +1,21 @@
+Receiver-side bathymetric controls summary
+Velocity response: viewer-displayed pointwise depth-averaged flow speed hotspots.
+Bathymetric metrics source: model-referenced source TOPO only.
+Interpretation language is limited to association/consistency diagnostics.
+Evidence categories: strong, moderate, weak, not supported, resolution-confounded, provenance unresolved, not evaluated.
+
+Energy trapping was not evaluated because no energy-flux residence or lateral-leakage diagnostic was computed.
+
+distance_to_20m_isobath: not supported; native median rho=-0.200; common median rho=-0.200
+distance_to_50m_isobath: not supported; native median rho=-0.207; common median rho=-0.196
+distance_to_source_boundary: provenance unresolved; native median rho=-0.198; common median rho=-0.198
+integrated_channel_anomaly_0_1000m: not supported; native median rho=0.100; common median rho=0.109
+isobath_convergence_20m: not supported; native median rho=-0.214; common median rho=-0.071
+isobath_convergence_50m: not supported; native median rho=-0.107; common median rho=-0.071
+mean_slope_0_1000m: not supported; native median rho=0.067; common median rho=0.067
+mean_slope_0_500m: not supported; native median rho=0.167; common median rho=0.096
+raw_source_native_resolution: provenance unresolved; native median rho=0.028; common median rho=0.028
+shoreline_curvature_500m: not supported; native median rho=-0.143; common median rho=-0.143
+velocity_isobath_alignment: not supported; native median rho=0.056; common median rho=0.056
+
+Specific trough/channel control is not supported unless contiguous positive channel anomalies persist across native and common scales with same-sign velocity association.

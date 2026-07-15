@@ -1,0 +1,10 @@
+Source TOPO shoreline validation
+Shoreline extraction source: model-referenced TOPO/topo-bathy.tt3
+No terrain.vtp, compact mesh, or viewer-sampled terrain was used for geometry metrics.
+LSA-LSF shared TOPO verification: pass
+Geometry hard gates: pass
+Residual hard gate uses contour-edge interpolation: median <= 0.25 m, P95 <= 1 m, max <= 2 m.
+
+side	direction	length_m	median_segment_m	max_segment_m	median_residual_m	p95_residual_m	max_residual_m	bilinear_grid_max_advisory_m
+west	south_to_north	178737.245	99.939	100.000	0	0	0	3.21644
+east	south_to_north	172276.981	97.598	100.000	0	0	0	9.78108

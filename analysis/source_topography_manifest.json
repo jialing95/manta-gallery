@@ -1,0 +1,274 @@
+{
+  "rows": [
+    {
+      "dx": 30.0,
+      "dy": 30.0,
+      "effective_topography_file_order": "{\"/home/daij/Desktop/compile_all/aqaba_scenarios_lsa/templates/mixed/setrun.py\": [\"TOPO/topo-bathy.tt3\", \"case-local tt3/b.tt3\"], \"/home/daij/Desktop/compile_all/aqaba_scenarios_lsa/templates/unmixedphase1/setrun.py\": [\"TOPO/topo-bathy.tt3\", \"case-local tt3/b.tt3\"], \"/home/daij/Desktop/compile_all/aqaba_scenarios_lsa/templates/unmixedphase2/setrun.py\": [\"TOPO/topo-bathy.tt3\", \"TOPO/topo-bathy.tt3\"]}",
+      "format": "GeoClaw topo type 3 ASCII",
+      "model_configuration_files": "/home/daij/Desktop/compile_all/aqaba_scenarios_lsa/templates/mixed/setrun.py;/home/daij/Desktop/compile_all/aqaba_scenarios_lsa/templates/unmixedphase1/setrun.py;/home/daij/Desktop/compile_all/aqaba_scenarios_lsa/templates/unmixedphase2/setrun.py",
+      "model_precedence_rank": 1,
+      "ncols": 2685,
+      "nodata": -9999.0,
+      "notes": "Shared receiver-side source topography used for shoreline and bathymetric metrics.",
+      "nrows": 6617,
+      "sha256": "e227e2403c32a6779cc8206c45f15c4eff33bea90d0748330b0d89c297352147",
+      "source_file": "/home/daij/Desktop/compile_all/aqaba_scenarios_lsa/TOPO/topo-bathy.tt3",
+      "source_root": "/home/daij/Desktop/compile_all/aqaba_scenarios_lsa/TOPO",
+      "topo_type": 3,
+      "used_by_model": true,
+      "vertical_datum_if_known": "unknown; sea level supplied by CLI",
+      "xmax": 114840.0,
+      "xmin": 34290.0,
+      "ymax": 3279930.0,
+      "ymin": 3081420.0
+    },
+    {
+      "dx": 30.0,
+      "dy": 30.0,
+      "effective_topography_file_order": "{\"/home/daij/Desktop/compile_all/aqaba_scenarios_lsa/templates/mixed/setrun.py\": [\"TOPO/topo-bathy.tt3\", \"case-local tt3/b.tt3\"], \"/home/daij/Desktop/compile_all/aqaba_scenarios_lsa/templates/unmixedphase1/setrun.py\": [\"TOPO/topo-bathy.tt3\", \"case-local tt3/b.tt3\"], \"/home/daij/Desktop/compile_all/aqaba_scenarios_lsa/templates/unmixedphase2/setrun.py\": [\"TOPO/topo-bathy.tt3\", \"TOPO/topo-bathy.tt3\"]}",
+      "format": "GeoClaw topo type 3 ASCII",
+      "model_configuration_files": "/home/daij/Desktop/compile_all/aqaba_scenarios_lsa/templates/mixed/setrun.py;/home/daij/Desktop/compile_all/aqaba_scenarios_lsa/templates/unmixedphase1/setrun.py;/home/daij/Desktop/compile_all/aqaba_scenarios_lsa/templates/unmixedphase2/setrun.py",
+      "model_precedence_rank": 2,
+      "ncols": 36,
+      "nodata": -9999.0,
+      "notes": "Model topofile overlay; not used for shared receiver-side shoreline or bathymetric controls.",
+      "nrows": 33,
+      "sha256": "2468a05edc119d82d00788a22197af267c6b3dc01046699b12d2ad3ab313a28b",
+      "source_file": "/home/daij/Desktop/compile_all/aqaba_scenarios_lsa/tt3/angm20/b.tt3",
+      "source_root": "/home/daij/Desktop/compile_all/aqaba_scenarios_lsa/TOPO",
+      "topo_type": 3,
+      "used_by_model": true,
+      "vertical_datum_if_known": "case-local landslide/static b topofile",
+      "xmax": 54090.0,
+      "xmin": 53010.0,
+      "ymax": 3150240.0,
+      "ymin": 3149250.0
+    },
+    {
+      "dx": 30.0,
+      "dy": 30.0,
+      "effective_topography_file_order": "{\"/home/daij/Desktop/compile_all/aqaba_scenarios_lsa/templates/mixed/setrun.py\": [\"TOPO/topo-bathy.tt3\", \"case-local tt3/b.tt3\"], \"/home/daij/Desktop/compile_all/aqaba_scenarios_lsa/templates/unmixedphase1/setrun.py\": [\"TOPO/topo-bathy.tt3\", \"case-local tt3/b.tt3\"], \"/home/daij/Desktop/compile_all/aqaba_scenarios_lsa/templates/unmixedphase2/setrun.py\": [\"TOPO/topo-bathy.tt3\", \"TOPO/topo-bathy.tt3\"]}",
+      "format": "GeoClaw topo type 3 ASCII",
+      "model_configuration_files": "/home/daij/Desktop/compile_all/aqaba_scenarios_lsa/templates/mixed/setrun.py;/home/daij/Desktop/compile_all/aqaba_scenarios_lsa/templates/unmixedphase1/setrun.py;/home/daij/Desktop/compile_all/aqaba_scenarios_lsa/templates/unmixedphase2/setrun.py",
+      "model_precedence_rank": 3,
+      "ncols": 36,
+      "nodata": -9999.0,
+      "notes": "Model topofile overlay; not used for shared receiver-side shoreline or bathymetric controls.",
+      "nrows": 33,
+      "sha256": "f653cca5a23f1b0888fb5c9cde17fa6db94f1a0b886268de4857e8605dead305",
+      "source_file": "/home/daij/Desktop/compile_all/aqaba_scenarios_lsa/tt3/angm25/b.tt3",
+      "source_root": "/home/daij/Desktop/compile_all/aqaba_scenarios_lsa/TOPO",
+      "topo_type": 3,
+      "used_by_model": true,
+      "vertical_datum_if_known": "case-local landslide/static b topofile",
+      "xmax": 54090.0,
+      "xmin": 53010.0,
+      "ymax": 3150240.0,
+      "ymin": 3149250.0
+    },
+    {
+      "dx": 30.0,
+      "dy": 30.0,
+      "effective_topography_file_order": "{\"/home/daij/Desktop/compile_all/aqaba_scenarios_lsa/templates/mixed/setrun.py\": [\"TOPO/topo-bathy.tt3\", \"case-local tt3/b.tt3\"], \"/home/daij/Desktop/compile_all/aqaba_scenarios_lsa/templates/unmixedphase1/setrun.py\": [\"TOPO/topo-bathy.tt3\", \"case-local tt3/b.tt3\"], \"/home/daij/Desktop/compile_all/aqaba_scenarios_lsa/templates/unmixedphase2/setrun.py\": [\"TOPO/topo-bathy.tt3\", \"TOPO/topo-bathy.tt3\"]}",
+      "format": "GeoClaw topo type 3 ASCII",
+      "model_configuration_files": "/home/daij/Desktop/compile_all/aqaba_scenarios_lsa/templates/mixed/setrun.py;/home/daij/Desktop/compile_all/aqaba_scenarios_lsa/templates/unmixedphase1/setrun.py;/home/daij/Desktop/compile_all/aqaba_scenarios_lsa/templates/unmixedphase2/setrun.py",
+      "model_precedence_rank": 4,
+      "ncols": 36,
+      "nodata": -9999.0,
+      "notes": "Model topofile overlay; not used for shared receiver-side shoreline or bathymetric controls.",
+      "nrows": 33,
+      "sha256": "39fe64443f1c67f98d0a73e452d7adc5abbdbee900cddad46530a19d6b956ad6",
+      "source_file": "/home/daij/Desktop/compile_all/aqaba_scenarios_lsa/tt3/angm30/b.tt3",
+      "source_root": "/home/daij/Desktop/compile_all/aqaba_scenarios_lsa/TOPO",
+      "topo_type": 3,
+      "used_by_model": true,
+      "vertical_datum_if_known": "case-local landslide/static b topofile",
+      "xmax": 54090.0,
+      "xmin": 53010.0,
+      "ymax": 3150240.0,
+      "ymin": 3149250.0
+    },
+    {
+      "dx": 30.0,
+      "dy": 30.0,
+      "effective_topography_file_order": "{\"/home/daij/Desktop/compile_all/aqaba_scenarios_lsa/templates/mixed/setrun.py\": [\"TOPO/topo-bathy.tt3\", \"case-local tt3/b.tt3\"], \"/home/daij/Desktop/compile_all/aqaba_scenarios_lsa/templates/unmixedphase1/setrun.py\": [\"TOPO/topo-bathy.tt3\", \"case-local tt3/b.tt3\"], \"/home/daij/Desktop/compile_all/aqaba_scenarios_lsa/templates/unmixedphase2/setrun.py\": [\"TOPO/topo-bathy.tt3\", \"TOPO/topo-bathy.tt3\"]}",
+      "format": "GeoClaw topo type 3 ASCII",
+      "model_configuration_files": "/home/daij/Desktop/compile_all/aqaba_scenarios_lsa/templates/mixed/setrun.py;/home/daij/Desktop/compile_all/aqaba_scenarios_lsa/templates/unmixedphase1/setrun.py;/home/daij/Desktop/compile_all/aqaba_scenarios_lsa/templates/unmixedphase2/setrun.py",
+      "model_precedence_rank": 5,
+      "ncols": 36,
+      "nodata": -9999.0,
+      "notes": "Model topofile overlay; not used for shared receiver-side shoreline or bathymetric controls.",
+      "nrows": 33,
+      "sha256": "8ffabd49e8c457ba03945d9aa1b147f36f0ecf9b5fbee9b180e2a7ecf8aaa6dd",
+      "source_file": "/home/daij/Desktop/compile_all/aqaba_scenarios_lsa/tt3/angm35/b.tt3",
+      "source_root": "/home/daij/Desktop/compile_all/aqaba_scenarios_lsa/TOPO",
+      "topo_type": 3,
+      "used_by_model": true,
+      "vertical_datum_if_known": "case-local landslide/static b topofile",
+      "xmax": 54090.0,
+      "xmin": 53010.0,
+      "ymax": 3150240.0,
+      "ymin": 3149250.0
+    },
+    {
+      "dx": 30.0,
+      "dy": 30.0,
+      "effective_topography_file_order": "{\"/home/daij/Desktop/compile_all/aqaba_scenarios_lsa/templates/mixed/setrun.py\": [\"TOPO/topo-bathy.tt3\", \"case-local tt3/b.tt3\"], \"/home/daij/Desktop/compile_all/aqaba_scenarios_lsa/templates/unmixedphase1/setrun.py\": [\"TOPO/topo-bathy.tt3\", \"case-local tt3/b.tt3\"], \"/home/daij/Desktop/compile_all/aqaba_scenarios_lsa/templates/unmixedphase2/setrun.py\": [\"TOPO/topo-bathy.tt3\", \"TOPO/topo-bathy.tt3\"]}",
+      "format": "GeoClaw topo type 3 ASCII",
+      "model_configuration_files": "/home/daij/Desktop/compile_all/aqaba_scenarios_lsa/templates/mixed/setrun.py;/home/daij/Desktop/compile_all/aqaba_scenarios_lsa/templates/unmixedphase1/setrun.py;/home/daij/Desktop/compile_all/aqaba_scenarios_lsa/templates/unmixedphase2/setrun.py",
+      "model_precedence_rank": 6,
+      "ncols": 36,
+      "nodata": -9999.0,
+      "notes": "Model topofile overlay; not used for shared receiver-side shoreline or bathymetric controls.",
+      "nrows": 33,
+      "sha256": "dac9fa47247e858fe037c77eb154db4fb9e53156107556f72017f688b6f9c2d0",
+      "source_file": "/home/daij/Desktop/compile_all/aqaba_scenarios_lsa/tt3/angm40/b.tt3",
+      "source_root": "/home/daij/Desktop/compile_all/aqaba_scenarios_lsa/TOPO",
+      "topo_type": 3,
+      "used_by_model": true,
+      "vertical_datum_if_known": "case-local landslide/static b topofile",
+      "xmax": 54090.0,
+      "xmin": 53010.0,
+      "ymax": 3150240.0,
+      "ymin": 3149250.0
+    }
+  ],
+  "shared_topography_verification": {
+    "consistent": true,
+    "scenarios": [
+      {
+        "resolved_topo_path": "/home/daij/Desktop/compile_all/aqaba_scenarios_lsa/TOPO/topo-bathy.tt3",
+        "root": "/home/daij/Desktop/compile_all/aqaba_scenarios_lsa",
+        "scenario": "lsa",
+        "sea_level_setting": "-9999.0",
+        "topo_path": "/home/daij/Desktop/compile_all/aqaba_scenarios_lsa/TOPO/topo-bathy.tt3",
+        "topo_sha256": "e227e2403c32a6779cc8206c45f15c4eff33bea90d0748330b0d89c297352147",
+        "topofile_order": {
+          "templates/mixed/setrun.py": [
+            "TOPO/topo-bathy.tt3",
+            "case-local tt3/b.tt3"
+          ],
+          "templates/unmixedphase1/setrun.py": [
+            "TOPO/topo-bathy.tt3",
+            "case-local tt3/b.tt3"
+          ],
+          "templates/unmixedphase2/setrun.py": [
+            "TOPO/topo-bathy.tt3",
+            "TOPO/topo-bathy.tt3"
+          ]
+        }
+      },
+      {
+        "resolved_topo_path": "/home/daij/Desktop/compile_all/aqaba_scenarios_lsb/TOPO/topo-bathy.tt3",
+        "root": "/home/daij/Desktop/compile_all/aqaba_scenarios_lsb",
+        "scenario": "lsb",
+        "sea_level_setting": "-9999.0",
+        "topo_path": "/home/daij/Desktop/compile_all/aqaba_scenarios_lsb/TOPO/topo-bathy.tt3",
+        "topo_sha256": "e227e2403c32a6779cc8206c45f15c4eff33bea90d0748330b0d89c297352147",
+        "topofile_order": {
+          "templates/mixed/setrun.py": [
+            "TOPO/topo-bathy.tt3",
+            "case-local tt3/b.tt3"
+          ],
+          "templates/unmixedphase1/setrun.py": [
+            "TOPO/topo-bathy.tt3",
+            "case-local tt3/b.tt3"
+          ],
+          "templates/unmixedphase2/setrun.py": [
+            "TOPO/topo-bathy.tt3",
+            "TOPO/topo-bathy.tt3"
+          ]
+        }
+      },
+      {
+        "resolved_topo_path": "/home/daij/Desktop/compile_all/aqaba_scenarios_lsc/TOPO/topo-bathy.tt3",
+        "root": "/home/daij/Desktop/compile_all/aqaba_scenarios_lsc",
+        "scenario": "lsc",
+        "sea_level_setting": "-9999.0",
+        "topo_path": "/home/daij/Desktop/compile_all/aqaba_scenarios_lsc/TOPO/topo-bathy.tt3",
+        "topo_sha256": "e227e2403c32a6779cc8206c45f15c4eff33bea90d0748330b0d89c297352147",
+        "topofile_order": {
+          "templates/mixed/setrun.py": [
+            "TOPO/topo-bathy.tt3",
+            "case-local tt3/b.tt3"
+          ],
+          "templates/unmixedphase1/setrun.py": [
+            "TOPO/topo-bathy.tt3",
+            "case-local tt3/b.tt3"
+          ],
+          "templates/unmixedphase2/setrun.py": [
+            "TOPO/topo-bathy.tt3",
+            "TOPO/topo-bathy.tt3"
+          ]
+        }
+      },
+      {
+        "resolved_topo_path": "/home/daij/Desktop/compile_all/aqaba_scenarios_lsd/TOPO/topo-bathy.tt3",
+        "root": "/home/daij/Desktop/compile_all/aqaba_scenarios_lsd",
+        "scenario": "lsd",
+        "sea_level_setting": "-9999.0",
+        "topo_path": "/home/daij/Desktop/compile_all/aqaba_scenarios_lsd/TOPO/topo-bathy.tt3",
+        "topo_sha256": "e227e2403c32a6779cc8206c45f15c4eff33bea90d0748330b0d89c297352147",
+        "topofile_order": {
+          "templates/mixed/setrun.py": [
+            "TOPO/topo-bathy.tt3",
+            "case-local tt3/b.tt3"
+          ],
+          "templates/unmixedphase1/setrun.py": [
+            "TOPO/topo-bathy.tt3",
+            "case-local tt3/b.tt3"
+          ],
+          "templates/unmixedphase2/setrun.py": [
+            "TOPO/topo-bathy.tt3",
+            "TOPO/topo-bathy.tt3"
+          ]
+        }
+      },
+      {
+        "resolved_topo_path": "/home/daij/Desktop/compile_all/aqaba_scenarios_lse/TOPO/topo-bathy.tt3",
+        "root": "/home/daij/Desktop/compile_all/aqaba_scenarios_lse",
+        "scenario": "lse",
+        "sea_level_setting": "-9999.0",
+        "topo_path": "/home/daij/Desktop/compile_all/aqaba_scenarios_lse/TOPO/topo-bathy.tt3",
+        "topo_sha256": "e227e2403c32a6779cc8206c45f15c4eff33bea90d0748330b0d89c297352147",
+        "topofile_order": {
+          "templates/mixed/setrun.py": [
+            "TOPO/topo-bathy.tt3",
+            "case-local tt3/b.tt3"
+          ],
+          "templates/unmixedphase1/setrun.py": [
+            "TOPO/topo-bathy.tt3",
+            "case-local tt3/b.tt3"
+          ],
+          "templates/unmixedphase2/setrun.py": [
+            "TOPO/topo-bathy.tt3",
+            "TOPO/topo-bathy.tt3"
+          ]
+        }
+      },
+      {
+        "resolved_topo_path": "/home/daij/Desktop/compile_all/aqaba_scenarios_lsf/TOPO/topo-bathy.tt3",
+        "root": "/home/daij/Desktop/compile_all/aqaba_scenarios_lsf",
+        "scenario": "lsf",
+        "sea_level_setting": "-9999.0",
+        "topo_path": "/home/daij/Desktop/compile_all/aqaba_scenarios_lsf/TOPO/topo-bathy.tt3",
+        "topo_sha256": "e227e2403c32a6779cc8206c45f15c4eff33bea90d0748330b0d89c297352147",
+        "topofile_order": {
+          "templates/mixed/setrun.py": [
+            "TOPO/topo-bathy.tt3",
+            "case-local tt3/b.tt3"
+          ],
+          "templates/unmixedphase1/setrun.py": [
+            "TOPO/topo-bathy.tt3",
+            "case-local tt3/b.tt3"
+          ],
+          "templates/unmixedphase2/setrun.py": [
+            "TOPO/topo-bathy.tt3",
+            "TOPO/topo-bathy.tt3"
+          ]
+        }
+      }
+    ]
+  },
+  "source_root": "/home/daij/Desktop/compile_all/aqaba_scenarios_lsa/TOPO"
+}

@@ -69,3 +69,10 @@ _site/
 
 # Local patch-script backup files
 *.bak_*
+
+# Generated shoreline velocity analysis outputs
+analysis/results_shoreline_velocity_*/
+analysis/tmp_shoreline_velocity_*/
+analysis/tmp_results_shoreline_velocity_*/
+analysis_cache/
+.cache/aqaba_bathymetry/
